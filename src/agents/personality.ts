@@ -1,0 +1,81 @@
+import type { AgentConfig, ChatMessage, Personality, RoomMessage } from "../types.js";
+
+// ── Build the system prompt for an agent given their personality ────
+
+export function buildSystemPrompt(p: Personality, topic: string): string {
+  return [
+    `You are "${p.name}" — ${p.tagline}.`,
+    ``,
+    `PERSONALITY TRAITS: ${p.traits.join(", ")}`,
+    `COMMUNICATION STYLE: ${p.style.join(". ")}`,
+    `PERSPECTIVE: ${p.bias}`,
+    ``,
+    `RULES FOR THIS CHAT ROOM:`,
+    `- You are in a group chat discussing: "${topic}"`,
+    `- Multiple people are chatting. You see their names before their messages.`,
+    `- Keep responses concise (2-4 sentences typically, occasionally longer for important points).`,
+    `- Stay in character. Your personality should come through naturally.`,
+    `- You can agree, disagree, build on points, ask questions, or challenge others.`,
+    `- Reference other speakers by name when responding to their points.`,
+    `- Be opinionated. Don't be wishy-washy or try to please everyone.`,
+    `- If someone new joins, you can briefly acknowledge them.`,
+    `- If you have nothing meaningful to add, you can be brief or pass.`,
+    `- Do NOT use quotation marks around your own message.`,
+    `- Do NOT prefix your message with your name.`,
+    `- Write naturally, like you're actually in a chat room. Not formal essays.`,
+  ].join("\n");
+}
+
+// ── Convert room history to ChatMessage format for an agent ─────────
+
+export function buildMessages(
+  agent: AgentConfig,
+  topic: string,
+  history: RoomMessage[],
+  contextWindow: number,
+): ChatMessage[] {
+  const system = buildSystemPrompt(agent.personality, topic);
+  const messages: ChatMessage[] = [{ role: "system", content: system }];
+
+  // Take the last N messages from history
+  const recent = history.slice(-contextWindow);
+
+  for (const msg of recent) {
+    if (msg.kind === "user") {
+      messages.push({ role: "user", content: `[HOST]: ${msg.content}` });
+    } else if (msg.kind === "join") {
+      messages.push({ role: "user", content: `* ${msg.agent} has joined the room — ${msg.content}` });
+    } else if (msg.kind === "leave") {
+      messages.push({ role: "user", content: `* ${msg.agent} has left the room — ${msg.content}` });
+    } else if (msg.kind === "system") {
+      messages.push({ role: "user", content: `[SYSTEM]: ${msg.content}` });
+    } else if (msg.agent === agent.personality.name) {
+      messages.push({ role: "assistant", content: msg.content });
+    } else {
+      messages.push({ role: "user", content: `[${msg.agent}]: ${msg.content}` });
+    }
+  }
+
+  return messages;
+}
+
+// ── Should this agent speak this turn? ──────────────────────────────
+
+export function shouldSpeak(
+  agent: AgentConfig,
+  lastSpeaker: string | null,
+  turnsSinceLast: number,
+): boolean {
+  const p = agent.personality;
+
+  // Never speak twice in a row
+  if (lastSpeaker === p.name) return false;
+
+  // Higher chance if haven't spoken in a while
+  const recencyBoost = Math.min(turnsSinceLast * 0.15, 0.4);
+
+  // Base probability from chattiness
+  const prob = p.chattiness + recencyBoost;
+
+  return Math.random() < prob;
+}

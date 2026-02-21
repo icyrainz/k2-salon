@@ -1,0 +1,18 @@
+{
+  "name": "k2-salon",
+  "version": "0.1.0",
+  "description": "Multi-AI debate room — different LLM personalities discuss topics in real-time IRC style",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/main.ts",
+    "dev": "bun --watch run src/main.ts",
+    "models": "bun run src/cli/models.ts"
+  },
+  "dependencies": {
+    "yaml": "^2.7"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7"
+  }
+}

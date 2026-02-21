@@ -1,0 +1,71 @@
+# ─────────────────────────────────────────────────────────────────────
+# k2-salon configuration
+# ─────────────────────────────────────────────────────────────────────
+# To see available models:  just models
+# To start a session:       just room <name>
+# ─────────────────────────────────────────────────────────────────────
+
+# ── Providers ────────────────────────────────────────────────────────
+# Each provider is a named LLM backend. Agents reference these by key.
+# kind: openrouter | openai-compat | ollama
+# Use `just models` to see what each provider has available.
+
+providers:
+  openrouter:
+    kind: openrouter
+    baseUrl: https://openrouter.ai/api/v1
+    apiKey: ${OPENROUTER_API_KEY}
+
+  zen:
+    kind: openai-compat
+    baseUrl: https://opencode.ai/zen/v1
+    apiKey: ${OPENCODE_ZEN_API_KEY}
+
+  moonshot:
+    kind: openai-compat
+    baseUrl: https://api.moonshot.ai/v1
+    apiKey: ${MOONSHOT_API_KEY}
+
+  fractal:
+    kind: openai-compat
+    baseUrl: http://akio-fractal:8080/v1
+
+  ollama:
+    kind: ollama
+    baseUrl: http://akio-ollama:11434
+
+# ── Room settings ────────────────────────────────────────────────────
+
+room:
+  contextWindow: 30
+  turnDelayMs: 800
+  minAgents: 3
+  maxAgents: 5
+  churnIntervalTurns: 4
+
+# ── Roster ───────────────────────────────────────────────────────────
+# Each agent points directly to a provider. Mix freely.
+# Model names are provider-specific — use `just models` to check.
+#
+# 5 agents across 5 different backends:
+
+roster:
+  - name: Sage                     # Stoic philosopher
+    provider: zen
+    model: claude-sonnet-4-6
+
+  - name: Wren                     # Devil's advocate
+    provider: openrouter
+    model: google/gemini-3.1-pro-preview
+
+  - name: Riko                     # Startup founder
+    provider: moonshot
+    model: kimi-k2.5
+
+  - name: DocK                     # Research scientist
+    provider: fractal
+    model: gpt-oss-20b
+
+  - name: Jules                    # Retired diplomat
+    provider: ollama
+    model: qwen3:8b
