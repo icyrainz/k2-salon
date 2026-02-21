@@ -21,7 +21,7 @@ export const DEFAULT_CONFIG: SalonConfig = {
   },
   room: {
     contextWindow: 30,
-    maxTokens: 1024,
+    maxTokens: 512,
     turnDelayMs: 800,
     minAgents: 3,
     maxAgents: 5,
@@ -118,6 +118,7 @@ export function resolveRoster(
       personality,
       provider: providerEntry.kind,
       model: entry.model,
+      providerName: entry.provider,
       baseUrl: providerEntry.baseUrl,
       apiKey: providerEntry.apiKey,
     });

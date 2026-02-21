@@ -44,6 +44,8 @@ export interface AgentConfig {
   personality: Personality;
   provider: ProviderKind;
   model: string;
+  /** The key from salon.yaml providers map, e.g. "zen", "moonshot", "fractal" */
+  providerName?: string;
   /** Override the provider's default base URL for this specific agent */
   baseUrl?: string;
   /** Override the provider's API key for this specific agent */

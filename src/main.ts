@@ -13,17 +13,12 @@ import {
   createRoomDir,
   TranscriptWriter,
 } from "./room/persist.js";
-import {
-  renderHeader,
-  renderMessage,
-  renderPresence,
-  renderStreamEnd,
-  renderStreamStart,
-  renderStreamToken,
-} from "./cli/renderer.js";
+import { renderTui, type TuiHandle } from "./cli/tui.js";
 import type { RoomConfig, RoomMessage } from "./types.js";
 
-// ── Readline for user input ─────────────────────────────────────────
+// ── Readline for pre-TUI user input ────────────────────────────────
+// We use readline only for room setup (name, topic) before ink takes
+// over stdin. Once the TUI is mounted, readline is closed.
 
 const rl = createInterface({
   input: process.stdin,
@@ -35,28 +30,6 @@ function ask(prompt: string): Promise<string> {
   return new Promise((resolve) => {
     process.stdout.write(prompt);
     rl.once("line", resolve);
-  });
-}
-
-// ── Non-blocking input buffer ───────────────────────────────────────
-// Lines accumulate here as the user types. The room loop polls this
-// between turns. The conversation never blocks waiting for you.
-
-const inputBuffer: string[] = [];
-let wantsQuit = false;
-
-function startInputListener(): void {
-  rl.on("line", (line) => {
-    const trimmed = line.trim();
-    if (trimmed === "/quit" || trimmed === "/exit") {
-      wantsQuit = true;
-    } else if (trimmed === "/who") {
-      // handled inline — we push a sentinel
-      inputBuffer.push("\x00WHO");
-    } else if (trimmed) {
-      inputBuffer.push(trimmed);
-    }
-    // empty line = just nudge, nothing added to buffer
   });
 }
 
@@ -190,61 +163,88 @@ async function main() {
   // Create the room with our roster and any preloaded history
   const state = createRoom(config, roster, preloadedHistory);
 
-  // Render the header
-  renderHeader(topic, { roomName, session, resumed: isResumed });
+  // Initialize transcript with participant names
+  await transcript.init(roster.map((a) => a.personality.name));
 
-  if (preloadedHistory.length > 0) {
-    process.stdout.write(
-      `\x1b[2m  Context: ${preloadedHistory.length} messages from prior conversations\x1b[0m\n\n`,
-    );
-  }
+  // ── Close readline before ink takes over stdin ─────────────────────
 
-  // Track which agent is currently streaming
+  rl.close();
+
+  // ── Non-blocking input buffer ──────────────────────────────────────
+  // The TUI writes user lines here. The room loop polls this.
+
+  const inputBuffer: string[] = [];
+  let wantsQuit = false;
+
+  const handleUserInput = (line: string) => {
+    if (line === "\x00WHO") {
+      // /who command — show the who table via TUI
+      tui.handle.showWho([...state.activeAgents]);
+    } else {
+      inputBuffer.push(line);
+    }
+  };
+
+  const handleQuit = () => {
+    wantsQuit = true;
+  };
+
+  // ── Mount the TUI ──────────────────────────────────────────────────
+
+  const tui = renderTui(
+    {
+      roomName,
+      session,
+      topic,
+      resumed: isResumed,
+      contextCount: preloadedHistory.length,
+    },
+    handleUserInput,
+    handleQuit,
+  );
+
+  // Build color map for stream callbacks
   const agentColorMap = new Map<string, string>();
   for (const agent of roster) {
     agentColorMap.set(agent.personality.name, agent.personality.color);
   }
 
-  let streamingAgent: string | null = null;
+  // ── Wire up room callbacks to TUI ──────────────────────────────────
 
-  // Initialize transcript with participant names
-  await transcript.init(roster.map(a => a.personality.name));
-
-  // Wire up callbacks
   const callbacks: RoomCallbacks = {
     onMessage: (msg) => {
       // Write to transcript
       transcript.append(msg);
 
-      // Render join/leave/system messages directly
-      if (msg.kind !== "chat" && msg.kind !== "user") {
-        renderMessage(msg);
+      // Push to TUI (for join/leave/system/user messages)
+      // Chat messages are handled via streaming, but we still need the
+      // final message for transcript. Don't push chat messages to TUI
+      // since they're already shown via streaming.
+      if (msg.kind !== "chat") {
+        tui.handle.pushMessage(msg);
       }
-      // After join/leave, show current room members
+
+      // Update active agents list on join/leave
       if (msg.kind === "join" || msg.kind === "leave") {
-        renderPresence(
-          state.activeAgents.map(a => ({
-            name: a.personality.name,
-            color: a.personality.color,
-          })),
-        );
+        tui.handle.setActiveAgents([...state.activeAgents]);
       }
     },
 
     onStreamToken: (agent, token) => {
-      if (streamingAgent !== agent) {
+      // If this is a new agent starting to stream, signal stream start
+      if (!streamingAgent || streamingAgent !== agent) {
         if (streamingAgent !== null) {
-          renderStreamEnd();
+          tui.handle.streamDone(streamingAgent);
         }
         streamingAgent = agent;
-        renderStreamStart(agent, agentColorMap.get(agent) ?? "\x1b[37m");
+        tui.handle.streamStart(agent, agentColorMap.get(agent) ?? "\x1b[37m");
       }
-      renderStreamToken(token);
+      tui.handle.streamToken(agent, token);
     },
 
     onStreamDone: (agent) => {
       if (streamingAgent === agent) {
-        renderStreamEnd();
+        tui.handle.streamDone(agent);
         streamingAgent = null;
       }
     },
@@ -252,18 +252,9 @@ async function main() {
     pollUserInput: () => {
       if (wantsQuit) return null;
 
-      // Drain buffer — handle /who sentinel, return first real message
+      // Drain buffer
       while (inputBuffer.length > 0) {
         const line = inputBuffer.shift()!;
-        if (line === "\x00WHO") {
-          renderPresence(
-            state.activeAgents.map(a => ({
-              name: a.personality.name,
-              color: a.personality.color,
-            })),
-          );
-          continue;
-        }
         return line;
       }
 
@@ -271,32 +262,25 @@ async function main() {
     },
   };
 
-  // Handle Ctrl+C gracefully — finalize transcript
+  let streamingAgent: string | null = null;
+
+  // ── Run the room engine ────────────────────────────────────────────
+
+  // Handle SIGINT gracefully
   process.on("SIGINT", async () => {
-    process.stdout.write("\n\x1b[2m  * Room closed. Goodbye.\x1b[0m\n");
     stopRoom(state);
     await transcript.finalize();
-    process.stdout.write(
-      `\x1b[2m  * Session ${session} saved to rooms/${roomName}/\x1b[0m\n\n`,
-    );
-    rl.close();
-    process.exit(0);
+    wantsQuit = true;
   });
 
-  // Start listening for user input (non-blocking)
-  startInputListener();
-
-  // Start the conversation — agents talk autonomously, you're an observer
-  // Type anytime to chime in, press enter to nudge, /quit to leave
+  // Start the conversation
   await runRoom(state, callbacks);
 
   // Finalize transcript on normal exit
   await transcript.finalize();
-  process.stdout.write(
-    `\n\x1b[2m  * Session ${session} saved to rooms/${roomName}/\x1b[0m\n\n`,
-  );
-  rl.close();
-  process.exit(0);
+
+  // Wait briefly for TUI to settle, then exit
+  setTimeout(() => process.exit(0), 100);
 }
 
 main().catch((err) => {

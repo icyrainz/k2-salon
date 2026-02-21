@@ -112,6 +112,8 @@ function evaluateChurn(state: RoomState, cb: RoomCallbacks): void {
         content: `${joiner.personality.tagline} — ${greeting}`,
         color: joiner.personality.color,
         kind: "join",
+        providerLabel: joiner.providerName,
+        modelLabel: joiner.model,
       };
       pushMessage(state, msg);
       cb.onMessage(msg);
@@ -231,6 +233,8 @@ export async function runRoom(
       content: agent.personality.tagline,
       color: agent.personality.color,
       kind: "join",
+      providerLabel: agent.providerName,
+      modelLabel: agent.model,
     };
     pushMessage(state, msg);
     cb.onMessage(msg);
