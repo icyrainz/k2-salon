@@ -25,7 +25,7 @@ export function buildSystemPrompt(p: Personality, topic: string): string {
     `- If someone new joins, you can briefly acknowledge them.`,
     `- If you have nothing meaningful to add, you can be brief or pass.`,
     `- Do NOT use quotation marks around your own message.`,
-    `- Do NOT prefix your message with your name.`,
+    `- NEVER start your message with your own name. Not "${p.name}:" or "${p.name} —" or anything like that. Just start talking.`,
     `- Write naturally, like you're actually in a chat room. Not formal essays.`,
   ].join("\n");
 }

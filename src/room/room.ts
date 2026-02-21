@@ -181,7 +181,11 @@ async function agentSpeak(
       { baseUrl: agent.baseUrl, apiKey: agent.apiKey, signal: state.abortController.signal },
     );
 
-    const content = result.content.trim();
+    // Strip leading "Name:" or "Name —" self-prefix that some models add
+    // despite being told not to. Match "DocK:", "DocK —", "DocK -", etc.
+    const raw = result.content.trim();
+    const selfPrefixRe = new RegExp(`^${name}\\s*[:\\-—]\\s*`, "i");
+    const content = raw.replace(selfPrefixRe, "").trim();
     if (!content) {
       // Surface empty responses so they're visible in the TUI
       const emptyMsg: RoomMessage = {
@@ -281,8 +285,10 @@ export async function runRoom(
       if (!state.running) break;
       await agentSpeak(state, speaker, cb);
 
-      // Natural pacing delay
-      await sleep(state.config.turnDelayMs + Math.random() * 500);
+      // Natural pacing delay — base + wide random jitter so turns feel organic.
+      // Abortable so /quit exits immediately instead of waiting out the delay.
+      const jitter = Math.random() * 3000;
+      await sleepAbortable(state.config.turnDelayMs + jitter, state.abortController.signal);
     }
 
     // Check for user input (non-blocking)
@@ -311,6 +317,9 @@ export function stopRoom(state: RoomState): void {
   state.abortController.abort();
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+function sleepAbortable(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener("abort", () => { clearTimeout(timer); resolve(); }, { once: true });
+  });
 }

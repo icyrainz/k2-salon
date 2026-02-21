@@ -258,6 +258,7 @@ async function readSSEStream(
   const decoder = new TextDecoder();
   let full = "";
   let buffer = "";
+  let truncated = false;
 
   // Cancel the reader when the abort signal fires
   signal?.addEventListener("abort", () => { reader.cancel().catch(() => {}); });
@@ -284,6 +285,10 @@ async function readSSEStream(
             full += token;
             stream.onToken?.(token);
           }
+          // Detect hard token-limit cutoff
+          if (json.choices?.[0]?.finish_reason === "length") {
+            truncated = true;
+          }
         } catch {
           // skip malformed chunks
         }
@@ -292,6 +297,12 @@ async function readSSEStream(
   } catch (err: any) {
     if (err?.name !== "AbortError") throw err;
     // AbortError = intentional cancel, return what we have
+  }
+
+  // Append ellipsis token so the TUI shows the message was cut
+  if (truncated) {
+    stream.onToken?.(" …");
+    full += " …";
   }
 
   stream.onDone?.(full);

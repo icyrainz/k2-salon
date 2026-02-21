@@ -39,8 +39,8 @@ providers:
 
 room:
   contextWindow: 30
-  maxTokens: 512              # Max tokens per agent response (safety net, prompt handles brevity)
-  turnDelayMs: 2000
+  maxTokens: 1024             # Max tokens per agent response (safety net, prompt handles brevity)
+  turnDelayMs: 5000
   minAgents: 3
   maxAgents: 5
   churnIntervalTurns: 4
