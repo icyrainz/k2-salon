@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { render, Box, Text, useApp, useStdout } from "ink";
+import { render, Box, Text, Static, useApp } from "ink";
 import TextInput from "ink-text-input";
 import type { AgentConfig, RoomMessage } from "../types.js";
 
@@ -285,7 +285,6 @@ function App({
   onQuit,
 }: TuiProps & { onUserInput: (line: string) => void; onQuit: () => void }) {
   const { exit } = useApp();
-  const { stdout } = useStdout();
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [activeAgents, setActiveAgents] = useState<AgentConfig[]>([]);
   const [whoDisplay, setWhoDisplay] = useState<AgentConfig[] | null>(null);
@@ -298,10 +297,7 @@ function App({
   } | null>(null);
   const flushTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Compute visible lines based on terminal height
-  const termHeight = stdout?.rows ?? 24;
-  // Reserve: header (3) + status bar (1) + separator (1) + input (1) + padding (2) = 8
-  const maxVisible = Math.max(termHeight - 8, 5);
+
 
   // Process events from the room engine
   useEffect(() => {
@@ -444,31 +440,40 @@ function App({
     [onUserInput, onQuit, exit],
   );
 
-  // Slice messages to fit terminal
-  const visible = messages.slice(-maxVisible);
+  // Split: settled messages go into <Static>, the live streaming message
+  // stays outside so it can update without re-rendering static history.
+  const streamingDm = messages.find((dm) => dm.isStreaming);
+  const settledMessages = messages.filter((dm) => !dm.isStreaming);
 
   return (
-    <Box flexDirection="column" height={termHeight}>
-      {/* Header */}
-      <Header
-        roomName={roomName}
-        session={session}
-        topic={topic}
-        resumed={resumed}
-      />
+    <Box flexDirection="column">
+      {/* Header — rendered once via Static so it doesn't scroll away */}
+      <Static items={[{ id: "header", roomName, session, topic, resumed, contextCount }]}>
+        {(item) => (
+          <Box key={item.id} flexDirection="column">
+            <Header
+              roomName={item.roomName}
+              session={item.session}
+              topic={item.topic}
+              resumed={item.resumed}
+            />
+            {item.contextCount > 0 && (
+              <Text dimColor>
+                {"  "}Context: {item.contextCount} messages from prior conversations
+              </Text>
+            )}
+          </Box>
+        )}
+      </Static>
 
-      {contextCount > 0 && (
-        <Text dimColor>
-          {"  "}Context: {contextCount} messages from prior conversations
-        </Text>
-      )}
+      {/* Settled chat history — Static means ink never re-renders these,
+          they scroll up naturally as new ones appear */}
+      <Static items={settledMessages}>
+        {(dm) => <ChatMessage key={dm.id} dm={dm} />}
+      </Static>
 
-      {/* Chat pane — grows to fill available space */}
-      <Box flexDirection="column" flexGrow={1}>
-        {visible.map((dm) => (
-          <ChatMessage key={dm.id} dm={dm} />
-        ))}
-      </Box>
+      {/* Live streaming message — outside Static so it updates */}
+      {streamingDm && <ChatMessage dm={streamingDm} />}
 
       {/* Who table (shown when /who is active) */}
       {whoDisplay && <WhoTable agents={whoDisplay} />}
@@ -486,7 +491,7 @@ function App({
       {/* Separator */}
       <Text dimColor>{"─".repeat(60)}</Text>
 
-      {/* Input line */}
+      {/* Input line — always at the bottom, never pushed away */}
       <InputLine onSubmit={handleSubmit} />
     </Box>
   );

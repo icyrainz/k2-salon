@@ -13,6 +13,8 @@ export interface StreamCallbacks {
 export interface ProviderOpts {
   baseUrl?: string;
   apiKey?: string;
+  /** AbortSignal to cancel the request (e.g. on /quit) */
+  signal?: AbortSignal;
 }
 
 export async function complete(
@@ -103,6 +105,7 @@ async function completeOpenRouter(
 
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
+    signal: opts?.signal,
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
@@ -124,7 +127,7 @@ async function completeOpenRouter(
   }
 
   if (doStream) {
-    return readSSEStream(res, req.model, stream!);
+    return readSSEStream(res, req.model, stream!, opts?.signal);
   }
 
   const json = (await res.json()) as any;
@@ -167,16 +170,23 @@ async function completeOpenAICompat(
 
   let res = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
+    signal: opts?.signal,
     headers,
     body: JSON.stringify(buildBody(true)),
   });
 
-  // Retry without temperature if the API rejects it
+  // If API rejects temperature (e.g. "only 1 is allowed"), retry once
+  // without it. Only do this when we guessed the temperature (0.9 default),
+  // not when the provider config explicitly set it — that would be a config error.
   if (!res.ok) {
     const text = await res.text();
-    if (text.includes("invalid temperature") || text.includes("temperature")) {
+    const isTemperatureError =
+      text.toLowerCase().includes("temperature") &&
+      req.temperature === 0.9; // only retry on our default, not explicit config
+    if (isTemperatureError) {
       res = await fetch(`${baseUrl}/chat/completions`, {
         method: "POST",
+        signal: opts?.signal,
         headers,
         body: JSON.stringify(buildBody(false)),
       });
@@ -190,7 +200,7 @@ async function completeOpenAICompat(
   }
 
   if (doStream) {
-    return readSSEStream(res, req.model, stream!);
+    return readSSEStream(res, req.model, stream!, opts?.signal);
   }
 
   const json = (await res.json()) as any;
@@ -209,6 +219,7 @@ async function completeOllama(
 
   const res = await fetch(`${baseUrl}/api/chat`, {
     method: "POST",
+    signal: opts?.signal,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: req.model,
@@ -227,7 +238,7 @@ async function completeOllama(
   }
 
   if (stream?.onToken) {
-    return readOllamaStream(res, req.model, stream);
+    return readOllamaStream(res, req.model, stream, opts?.signal);
   }
 
   const json = (await res.json()) as any;
@@ -241,37 +252,46 @@ async function readSSEStream(
   res: Response,
   model: string,
   stream: StreamCallbacks,
+  signal?: AbortSignal,
 ): Promise<CompletionResponse> {
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
   let full = "";
   let buffer = "";
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  // Cancel the reader when the abort signal fires
+  signal?.addEventListener("abort", () => { reader.cancel().catch(() => {}); });
 
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith("data: ")) continue;
-      const data = trimmed.slice(6);
-      if (data === "[DONE]") break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
 
-      try {
-        const json = JSON.parse(data);
-        const token = json.choices?.[0]?.delta?.content ?? "";
-        if (token) {
-          full += token;
-          stream.onToken?.(token);
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data: ")) continue;
+        const data = trimmed.slice(6);
+        if (data === "[DONE]") break;
+
+        try {
+          const json = JSON.parse(data);
+          const token = json.choices?.[0]?.delta?.content ?? "";
+          if (token) {
+            full += token;
+            stream.onToken?.(token);
+          }
+        } catch {
+          // skip malformed chunks
         }
-      } catch {
-        // skip malformed chunks
       }
     }
+  } catch (err: any) {
+    if (err?.name !== "AbortError") throw err;
+    // AbortError = intentional cancel, return what we have
   }
 
   stream.onDone?.(full);
@@ -284,33 +304,40 @@ async function readOllamaStream(
   res: Response,
   model: string,
   stream: StreamCallbacks,
+  signal?: AbortSignal,
 ): Promise<CompletionResponse> {
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
   let full = "";
   let buffer = "";
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  signal?.addEventListener("abort", () => { reader.cancel().catch(() => {}); });
 
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      try {
-        const json = JSON.parse(line);
-        const token = json.message?.content ?? "";
-        if (token) {
-          full += token;
-          stream.onToken?.(token);
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const json = JSON.parse(line);
+          const token = json.message?.content ?? "";
+          if (token) {
+            full += token;
+            stream.onToken?.(token);
+          }
+        } catch {
+          // skip
         }
-      } catch {
-        // skip
       }
     }
+  } catch (err: any) {
+    if (err?.name !== "AbortError") throw err;
   }
 
   stream.onDone?.(full);

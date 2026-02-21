@@ -191,6 +191,7 @@ async function main() {
 
   const handleQuit = () => {
     wantsQuit = true;
+    stopRoom(state);
   };
 
   // ── Mount the TUI ──────────────────────────────────────────────────
@@ -270,11 +271,12 @@ async function main() {
 
   // ── Run the room engine ────────────────────────────────────────────
 
-  // Handle SIGINT gracefully
+  // Handle SIGINT gracefully — abort in-flight streams and exit fast
   process.on("SIGINT", async () => {
     stopRoom(state);
-    await transcript.finalize();
     wantsQuit = true;
+    await transcript.finalize();
+    process.exit(0);
   });
 
   // Start the conversation

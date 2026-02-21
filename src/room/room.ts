@@ -15,6 +15,8 @@ export interface RoomState {
   /** Tracks how many turns since each agent last spoke */
   turnsSinceSpoke: Map<string, number>;
   running: boolean;
+  /** Aborts any in-flight LLM fetch when the room stops */
+  abortController: AbortController;
 }
 
 export type RoomEventHandler = (msg: RoomMessage) => void;
@@ -58,6 +60,7 @@ export function createRoom(
     lastSpeaker: null,
     turnsSinceSpoke: new Map(),
     running: false,
+    abortController: new AbortController(),
   };
 }
 
@@ -175,11 +178,23 @@ async function agentSpeak(
       agent.provider,
       { model: agent.model, messages, temperature: agent.temperature ?? 0.9, maxTokens: state.config.maxTokens },
       { onToken: (token) => cb.onStreamToken(name, token), onDone: () => cb.onStreamDone(name) },
-      { baseUrl: agent.baseUrl, apiKey: agent.apiKey },
+      { baseUrl: agent.baseUrl, apiKey: agent.apiKey, signal: state.abortController.signal },
     );
 
     const content = result.content.trim();
-    if (!content) return;
+    if (!content) {
+      // Surface empty responses so they're visible in the TUI
+      const emptyMsg: RoomMessage = {
+        timestamp: new Date(),
+        agent: "SYSTEM",
+        content: `[${name} returned an empty response]`,
+        color: "\x1b[90m",
+        kind: "system",
+      };
+      pushMessage(state, emptyMsg);
+      cb.onMessage(emptyMsg);
+      return;
+    }
 
     const msg: RoomMessage = {
       timestamp: new Date(),
@@ -194,6 +209,8 @@ async function agentSpeak(
     state.lastSpeaker = name;
     state.turnsSinceSpoke.set(name, 0);
   } catch (err: any) {
+    // AbortError = room was stopped intentionally, not a real error
+    if (err?.name === "AbortError") return;
     const msg: RoomMessage = {
       timestamp: new Date(),
       agent: "SYSTEM",
@@ -291,6 +308,7 @@ export async function runRoom(
 
 export function stopRoom(state: RoomState): void {
   state.running = false;
+  state.abortController.abort();
 }
 
 function sleep(ms: number): Promise<void> {
