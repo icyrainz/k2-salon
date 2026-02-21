@@ -267,22 +267,27 @@ async function main() {
   const tmpDir = join("/tmp", `k2-podcast-${Date.now()}`);
   await mkdir(tmpDir, { recursive: true });
 
-  process.stderr.write(`\nGenerating podcast — ${segments.length} segments, model: ${ttsModel}\n\n`);
+  process.stderr.write(`\nGenerating podcast — ${segments.length} segments in parallel, model: ${ttsModel}\n\n`);
 
+  // Synthesise all segments in parallel — much faster than sequential
+  let done = 0;
+  const speechBuffers = await Promise.all(
+    segments.map(async (seg, i) => {
+      const audio = await synthesise(seg.text, seg.voice, ttsModel);
+      done++;
+      process.stderr.write(`  [${done}/${segments.length}] ${seg.agent} (${seg.voice})\n`);
+      return { i, audio, seg };
+    }),
+  );
+
+  // Write files in order and build chunk list
   const chunkPaths: string[] = [];
-
-  for (let i = 0; i < segments.length; i++) {
-    const seg = segments[i];
+  for (const { i, audio, seg } of speechBuffers.sort((a, b) => a.i - b.i)) {
     const pad = String(i).padStart(4, "0");
     const segPath = join(tmpDir, `${pad}-speech.mp3`);
     const silPath = join(tmpDir, `${pad}-silence.mp3`);
-
-    process.stderr.write(`  [${i + 1}/${segments.length}] ${seg.agent} (${seg.voice})\n`);
-
-    const audio = await synthesise(seg.text, seg.voice, ttsModel);
     await writeFile(segPath, audio);
     chunkPaths.push(segPath);
-
     if (seg.pauseMs > 0) {
       generateSilence(seg.pauseMs, silPath);
       chunkPaths.push(silPath);
