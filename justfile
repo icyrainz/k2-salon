@@ -45,15 +45,17 @@ simulate topic *args:
 
 # Convert a simulation report to a podcast MP3 (reads stdin or a file)
 # Usage: just podcast report.md
-#        just simulate "topic" | just podcast
 #        just podcast report.md -- --out episode.mp3 --model tts-1-hd
 podcast *args:
-    bun run src/cli/podcast.ts {{args}}
+    env -u OPENAI_API_KEY bun run src/cli/podcast.ts {{args}}
 
 # One-shot: simulate and produce a podcast in one command
+# Saves the report to /tmp/salon-report.md first so it's never lost on failure.
 # Usage: just salon-podcast "your topic here"
 salon-podcast topic *args:
-    bun run src/cli/simulate.ts "{{topic}}" {{args}} | bun run src/cli/podcast.ts
+    bun run src/cli/simulate.ts "{{topic}}" {{args}} > /tmp/salon-report.md
+    @echo "Report saved to /tmp/salon-report.md"
+    env -u OPENAI_API_KEY bun run src/cli/podcast.ts /tmp/salon-report.md
 
 # ── Setup ────────────────────────────────────────────────────────────
 
