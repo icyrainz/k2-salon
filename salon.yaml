@@ -25,6 +25,7 @@ providers:
     kind: openai-compat
     baseUrl: https://api.moonshot.ai/v1
     apiKey: ${MOONSHOT_API_KEY}
+    temperature: 1            # kimi-k2.5 only allows temperature=1
 
   fractal:
     kind: openai-compat

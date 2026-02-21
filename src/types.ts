@@ -50,6 +50,8 @@ export interface AgentConfig {
   baseUrl?: string;
   /** Override the provider's API key for this specific agent */
   apiKey?: string;
+  /** Override temperature (from provider config; some APIs only allow 1) */
+  temperature?: number;
 }
 
 // ── Room ────────────────────────────────────────────────────────────
@@ -88,6 +90,8 @@ export interface ProviderEntry {
   kind: ProviderKind;
   baseUrl: string;
   apiKey?: string;
+  /** Override temperature for all agents using this provider (some APIs only allow 1) */
+  temperature?: number;
 }
 
 export interface RosterEntry {

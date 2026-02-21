@@ -151,21 +151,42 @@ async function completeOpenAICompat(
     headers.Authorization = `Bearer ${opts.apiKey}`;
   }
 
-  const res = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
+  // Build body, optionally omitting temperature
+  function buildBody(includeTemp: boolean) {
+    const body: Record<string, any> = {
       model: req.model,
       messages: req.messages,
-      temperature: req.temperature ?? 0.9,
       max_tokens: req.maxTokens ?? 300,
       stream: doStream,
-    }),
+    };
+    if (includeTemp) {
+      body.temperature = req.temperature ?? 0.9;
+    }
+    return body;
+  }
+
+  let res = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(buildBody(true)),
   });
 
+  // Retry without temperature if the API rejects it
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`OpenAI-compat ${res.status}: ${text}`);
+    if (text.includes("invalid temperature") || text.includes("temperature")) {
+      res = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(buildBody(false)),
+      });
+      if (!res.ok) {
+        const retryText = await res.text();
+        throw new Error(`OpenAI-compat ${res.status}: ${retryText}`);
+      }
+    } else {
+      throw new Error(`OpenAI-compat ${res.status}: ${text}`);
+    }
   }
 
   if (doStream) {
