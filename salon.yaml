@@ -49,29 +49,30 @@ room:
 # Each agent points directly to a provider. Mix freely.
 # Model names are provider-specific — use `just models` to check.
 #
-# 5 agents across 5 different backends:
+# Free/local agents first — cheapest for testing.
+# 6 agents across 5 different backends:
 
 roster:
-  - name: Sage                     # Stoic philosopher
-    provider: zen
-    model: claude-sonnet-4-6
-
-  - name: Wren                     # Devil's advocate
-    provider: openrouter
-    model: google/gemini-3.1-pro-preview
-
-  - name: Riko                     # Startup founder
-    provider: moonshot
-    model: kimi-k2.5
-
-  - name: DocK                     # Research scientist
-    provider: fractal
-    model: gpt-oss-20b
-
-  - name: Jules                    # Retired diplomat
+  - name: Jules                    # Retired diplomat       [local — ollama]
     provider: ollama
     model: qwen3:8b
 
-  - name: Chip                     # Jaded GenZ tech worker
+  - name: Chip                     # Jaded GenZ tech worker [free — glm-5-free]
     provider: zen
     model: glm-5-free
+
+  - name: Sage                     # Stoic philosopher      [paid — zen]
+    provider: zen
+    model: claude-sonnet-4-6
+
+  - name: Wren                     # Devil's advocate       [paid — openrouter]
+    provider: openrouter
+    model: google/gemini-3.1-pro-preview
+
+  - name: Riko                     # Startup founder        [paid — moonshot]
+    provider: moonshot
+    model: kimi-k2.5
+
+  - name: DocK                     # Research scientist     [paid — fractal]
+    provider: fractal
+    model: gpt-oss-20b

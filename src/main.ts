@@ -1,7 +1,15 @@
 import { createInterface } from "readline";
 import { PERSONALITY_PRESETS } from "./agents/roster.js";
 import { loadConfig, resolveRoster } from "./config/loader.js";
-import { createRoom, runRoom, stopRoom, type RoomCallbacks } from "./room/room.js";
+import {
+  createRoom,
+  openRoom,
+  stepRoom,
+  stopRoom,
+  injectUserMessage,
+  sleepAbortable,
+  type RoomCallbacks,
+} from "./room/room.js";
 import {
   loadRoomMeta,
   saveRoomMeta,
@@ -17,18 +25,11 @@ import { renderTui } from "./cli/tui.js";
 import type { RoomConfig, RoomMessage } from "./types.js";
 
 // ── Pre-TUI prompts ────────────────────────────────────────────────
-// Readline is created lazily and destroyed before ink takes over.
 
 function ask(prompt: string): Promise<string> {
   return new Promise((resolve) => {
-    const rl = createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
-    rl.question(prompt, (answer) => {
-      rl.close();
-      resolve(answer);
-    });
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(prompt, (answer) => { rl.close(); resolve(answer); });
   });
 }
 
@@ -37,7 +38,6 @@ function ask(prompt: string): Promise<string> {
 async function main() {
   const arg = process.argv.slice(2).join(" ").trim();
 
-  // Load salon configuration
   const salonConfig = await loadConfig();
   const roster = resolveRoster(salonConfig, PERSONALITY_PRESETS);
 
@@ -47,142 +47,73 @@ async function main() {
   let isResumed = false;
 
   if (!arg) {
-    // Interactive mode: ask for room name
     process.stdout.write("\x1b[1mk2-salon\x1b[0m — Multi-AI Debate Room\n\n");
     roomName = await ask("Room name (creates new if doesn't exist): ");
     roomName = roomName.trim().toLowerCase().replace(/\s+/g, "-");
-    if (!roomName) {
-      process.stdout.write("No room name provided. Exiting.\n");
-      process.exit(0);
-    }
+    if (!roomName) { process.stdout.write("No room name provided. Exiting.\n"); process.exit(0); }
   } else {
     roomName = arg.toLowerCase().replace(/\s+/g, "-");
   }
 
-  // ── Resolve room: existing or new ──────────────────────────────────
-
   if (roomExists(roomName)) {
     const meta = await loadRoomMeta(roomName);
-
     if (meta) {
-      // Existing room with metadata — resume
       topic = meta.topic;
       isResumed = true;
-
-      // Load previous session messages for context
       const prevMessages = await loadPreviousSessions(roomName, salonConfig.room.contextWindow);
       preloadedHistory.push(...prevMessages);
-
       process.stdout.write(
-        `\x1b[2m  Resuming room "${roomName}" — ${prevMessages.length} messages loaded from previous sessions\x1b[0m\n`,
+        `\x1b[2m  Resuming room "${roomName}" — ${prevMessages.length} messages loaded\x1b[0m\n`,
       );
     } else {
-      // Room dir exists but no room.yaml — check for seed material
       const seed = await loadSeedMaterial(roomName);
-
       if (seed) {
-        // Parse seed into context messages
         const seedMessages = parseSeedToMessages(seed);
         preloadedHistory.push(...seedMessages);
-
-        // Try to extract topic from seed (first markdown heading)
         const headingMatch = seed.match(/^#\s+(.+)/m);
         if (headingMatch) {
           topic = headingMatch[1].trim();
-          process.stdout.write(
-            `\x1b[2m  Found seed material in "${roomName}" — topic: ${topic}\x1b[0m\n`,
-          );
         } else {
-          process.stdout.write(
-            `\x1b[2m  Found seed material in "${roomName}"\x1b[0m\n`,
-          );
           topic = await ask("Topic for this room: ");
           topic = topic.trim();
-          if (!topic) {
-            process.stdout.write("No topic provided. Exiting.\n");
-            process.exit(0);
-          }
+          if (!topic) { process.stdout.write("No topic provided. Exiting.\n"); process.exit(0); }
         }
-
-        process.stdout.write(
-          `\x1b[2m  Loaded ${seedMessages.length} messages from seed material\x1b[0m\n`,
-        );
       } else {
-        // Empty room dir, no seed — ask for topic
         topic = await ask("Topic for this room: ");
         topic = topic.trim();
-        if (!topic) {
-          process.stdout.write("No topic provided. Exiting.\n");
-          process.exit(0);
-        }
+        if (!topic) { process.stdout.write("No topic provided. Exiting.\n"); process.exit(0); }
       }
-
-      // Save room metadata
-      await saveRoomMeta(roomName, {
-        topic,
-        created: new Date().toISOString(),
-        lastSession: 0,
-      });
+      await saveRoomMeta(roomName, { topic, created: new Date().toISOString(), lastSession: 0 });
     }
   } else {
-    // New room — create directory and ask for topic
     topic = await ask(`Creating new room "${roomName}". Topic: `);
     topic = topic.trim();
-    if (!topic) {
-      process.stdout.write("No topic provided. Exiting.\n");
-      process.exit(0);
-    }
-
+    if (!topic) { process.stdout.write("No topic provided. Exiting.\n"); process.exit(0); }
     await createRoomDir(roomName);
-    await saveRoomMeta(roomName, {
-      topic,
-      created: new Date().toISOString(),
-      lastSession: 0,
-    });
+    await saveRoomMeta(roomName, { topic, created: new Date().toISOString(), lastSession: 0 });
   }
-
-  // ── Set up session ─────────────────────────────────────────────────
 
   const session = await nextSessionNumber(roomName);
   const transcript = new TranscriptWriter(roomName, session, topic);
 
-  // Update room metadata
   const meta = await loadRoomMeta(roomName);
-  if (meta) {
-    meta.lastSession = session;
-    await saveRoomMeta(roomName, meta);
-  }
+  if (meta) { meta.lastSession = session; await saveRoomMeta(roomName, meta); }
 
-  // Room configuration
-  const config: RoomConfig = {
-    topic,
-    ...salonConfig.room,
-  };
-
-  // Create the room with our roster and any preloaded history
+  const config: RoomConfig = { topic, ...salonConfig.room };
   const state = createRoom(config, roster, preloadedHistory);
 
-  // Initialize transcript with participant names
   await transcript.init(roster.map((a) => a.personality.name));
 
-  // ── Ensure stdin is clean before ink ───────────────────────────────
-  // After any readline usage above, stdin may be paused or have
-  // lingering listeners. Reset it so ink can take full control.
-
+  // ── Clean stdin before ink takes over ─────────────────────────────
   process.stdin.removeAllListeners();
-  if (process.stdin.isPaused()) {
-    process.stdin.resume();
-  }
+  process.stdin.pause();
 
-  // ── Non-blocking input buffer ──────────────────────────────────────
-  // The TUI writes user lines here. The room loop polls this.
-
+  // ── Input buffer: TUI writes here, room loop reads ─────────────────
   const inputBuffer: string[] = [];
   let wantsQuit = false;
 
   const handleUserInput = (line: string) => {
     if (line === "\x00WHO") {
-      // /who command — show the who table via TUI
       tui.handle.showWho([...state.activeAgents]);
     } else {
       inputBuffer.push(line);
@@ -194,88 +125,42 @@ async function main() {
     stopRoom(state);
   };
 
-  // ── Mount the TUI ──────────────────────────────────────────────────
-
+  // ── Mount TUI ──────────────────────────────────────────────────────
   const tui = renderTui(
-    {
-      roomName,
-      session,
-      topic,
-      resumed: isResumed,
-      contextCount: preloadedHistory.length,
-    },
+    { roomName, session, topic, resumed: isResumed, contextCount: preloadedHistory.length },
     handleUserInput,
     handleQuit,
   );
 
-  // Build color map for stream callbacks
   const agentColorMap = new Map<string, string>();
   for (const agent of roster) {
     agentColorMap.set(agent.personality.name, agent.personality.color);
   }
 
-  // ── Wire up room callbacks to TUI ──────────────────────────────────
-
+  // Streaming state tracked here in the TUI layer
   let streamingAgent: string | null = null;
 
   const callbacks: RoomCallbacks = {
     onMessage: (msg) => {
-      // Write to transcript
       transcript.append(msg);
-
-      // Push to TUI (for join/leave/system/user messages)
-      // Chat messages are handled via streaming, but we still need the
-      // final message for transcript. Don't push chat messages to TUI
-      // since they're already shown via streaming.
-      if (msg.kind !== "chat") {
-        tui.handle.pushMessage(msg);
-      }
-
-      // Update active agents list on join/leave
+      if (msg.kind !== "chat") tui.handle.pushMessage(msg);
       if (msg.kind === "join" || msg.kind === "leave") {
         tui.handle.setActiveAgents([...state.activeAgents]);
       }
     },
-
     onStreamToken: (agent, token) => {
-      // If this is a new agent starting to stream, signal stream start
       if (!streamingAgent || streamingAgent !== agent) {
-        if (streamingAgent !== null) {
-          tui.handle.streamDone(streamingAgent);
-        }
+        if (streamingAgent !== null) tui.handle.streamDone(streamingAgent);
         streamingAgent = agent;
         tui.handle.streamStart(agent, agentColorMap.get(agent) ?? "\x1b[37m");
       }
       tui.handle.streamToken(agent, token);
     },
-
     onStreamDone: (agent) => {
-      if (streamingAgent === agent) {
-        tui.handle.streamDone(agent);
-        streamingAgent = null;
-      }
-    },
-
-    pollUserInput: () => {
-      if (wantsQuit) return null;
-
-      // Drain buffer
-      while (inputBuffer.length > 0) {
-        const line = inputBuffer.shift()!;
-        return line;
-      }
-
-      return undefined; // nothing pending
-    },
-
-    onGoverned: (governed) => {
-      tui.handle.setGoverned(governed);
+      if (streamingAgent === agent) { tui.handle.streamDone(agent); streamingAgent = null; }
     },
   };
 
-  // ── Run the room engine ────────────────────────────────────────────
-
-  // Handle SIGINT gracefully — abort in-flight streams and exit fast
   process.on("SIGINT", async () => {
     stopRoom(state);
     wantsQuit = true;
@@ -283,14 +168,98 @@ async function main() {
     process.exit(0);
   });
 
-  // Start the conversation
-  await runRoom(state, callbacks);
+  // ── Open room (emits topic + join messages) ────────────────────────
+  openRoom(state, callbacks);
+  tui.handle.setActiveAgents([...state.activeAgents]);
+  tui.handle.setGoverned(state.governed);
 
-  // Finalize transcript on normal exit
+  // ── Main TUI loop ──────────────────────────────────────────────────
+  // The governed wait and free-mode pacing both live here, not in the engine.
+
+  while (state.running && !wantsQuit) {
+    const nextSpeaker = pickNextSpeakerPreview(state);
+
+    if (state.governed) {
+      // Announce who is up and wait for /next (or a user message)
+      if (nextSpeaker) {
+        const readyMsg: RoomMessage = {
+          timestamp: new Date(),
+          agent: "SYSTEM",
+          content: `[${nextSpeaker.personality.name} is ready — /next to let them speak, or type a reply]`,
+          color: "\x1b[90m",
+          kind: "system",
+        };
+        tui.handle.pushMessage(readyMsg);
+      }
+
+      // Wait for /next, /free, user text, or quit
+      let advanced = false;
+      while (!advanced && state.running && !wantsQuit) {
+        await sleepAbortable(120, state.abortController.signal);
+
+        // Drain one item from the input buffer
+        const input = inputBuffer.shift();
+        if (input === undefined) continue;
+        if (input === "\x00NEXT") { advanced = true; break; }
+        if (input === "\x00FREE") {
+          state.governed = false;
+          tui.handle.setGoverned(false);
+          advanced = true;
+          break;
+        }
+        if (input === "\x00GOVERN") continue; // already governed
+        if (input.trim()) {
+          injectUserMessage(state, input, callbacks);
+          advanced = true;
+        }
+      }
+
+      if (!state.running || wantsQuit) break;
+
+      // Drain any stale /next that queued up during streaming
+      const step = stepRoom(state, callbacks);
+      await step;
+
+      // Flush stale sentinels accumulated while agent was streaming
+      let stale: string | undefined;
+      while ((stale = inputBuffer.shift()) !== undefined) {
+        if (stale === "\x00FREE") { state.governed = false; tui.handle.setGoverned(false); break; }
+        if (stale === "\x00GOVERN") break; // handled below
+        if (stale === "\x00NEXT") continue; // discard
+        if (stale.trim()) { injectUserMessage(state, stale, callbacks); break; }
+      }
+    } else {
+      // Free mode: natural pacing delay, then step
+      const jitter = Math.random() * 3000;
+      await sleepAbortable(state.config.turnDelayMs + jitter, state.abortController.signal);
+
+      if (!state.running || wantsQuit) break;
+
+      // Check for user input before stepping
+      const input = inputBuffer.shift();
+      if (input === null || wantsQuit) break;
+      if (input === "\x00GOVERN") { state.governed = true; tui.handle.setGoverned(true); }
+      else if (input?.trim()) injectUserMessage(state, input, callbacks);
+
+      await stepRoom(state, callbacks);
+    }
+  }
+
   await transcript.finalize();
-
-  // Wait briefly for TUI to settle, then exit
   setTimeout(() => process.exit(0), 100);
+}
+
+// ── Peek at who would speak next (mirrors pickSpeaker logic) ────────
+// Used only for the governed-mode announcement; the engine re-picks internally.
+
+function pickNextSpeakerPreview(state: ReturnType<typeof createRoom>) {
+  const { activeAgents, lastSpeaker, turnsSinceSpoke } = state;
+  const candidates = activeAgents.filter(a => {
+    const turns = turnsSinceSpoke.get(a.personality.name) ?? 2;
+    return a.personality.name !== lastSpeaker && turns >= 1;
+  });
+  if (candidates.length === 0) return activeAgents.find(a => a.personality.name !== lastSpeaker) ?? null;
+  return candidates[Math.floor(Math.random() * candidates.length)];
 }
 
 main().catch((err) => {

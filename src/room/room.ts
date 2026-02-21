@@ -12,31 +12,18 @@ export interface RoomState {
   benchedAgents: AgentConfig[];
   turnCount: number;
   lastSpeaker: string | null;
-  /** Tracks how many turns since each agent last spoke */
   turnsSinceSpoke: Map<string, number>;
   running: boolean;
-  /** Aborts any in-flight LLM fetch when the room stops */
   abortController: AbortController;
-  /** Governed mode: room pauses after each turn and waits for /next */
   governed: boolean;
 }
 
-export type RoomEventHandler = (msg: RoomMessage) => void;
-export type StreamTokenHandler = (agent: string, token: string) => void;
-export type StreamDoneHandler = (agent: string) => void;
+// ── Callbacks (streaming only — no polling) ─────────────────────────
 
 export interface RoomCallbacks {
-  onMessage: RoomEventHandler;
-  onStreamToken: StreamTokenHandler;
-  onStreamDone: StreamDoneHandler;
-  /**
-   * Non-blocking: check if user has typed something.
-   * Returns the line if available, empty string if nothing pending,
-   * or null if user wants to quit.
-   */
-  pollUserInput: () => string | null | undefined;
-  /** Called when governed mode changes so the UI can update */
-  onGoverned?: (governed: boolean) => void;
+  onMessage: (msg: RoomMessage) => void;
+  onStreamToken: (agent: string, token: string) => void;
+  onStreamDone: (agent: string) => void;
 }
 
 // ── Create room ─────────────────────────────────────────────────────
@@ -46,7 +33,6 @@ export function createRoom(
   allAgents: AgentConfig[],
   preloadedHistory?: RoomMessage[],
 ): RoomState {
-  // Pick initial active agents (up to maxAgents)
   const shuffled = [...allAgents].sort(() => Math.random() - 0.5);
   const initialCount = Math.min(
     config.maxAgents,
@@ -69,81 +55,156 @@ export function createRoom(
   };
 }
 
-// ── Add message to history ──────────────────────────────────────────
+// ── Stop room ───────────────────────────────────────────────────────
 
-function pushMessage(state: RoomState, msg: RoomMessage): void {
-  state.history.push(msg);
+export function stopRoom(state: RoomState): void {
+  state.running = false;
+  state.abortController.abort();
 }
 
-// ── Churn: drop-in / drop-out simulation ────────────────────────────
+// ── Open room: emit topic + join messages ───────────────────────────
+// Call once before the first stepRoom(). Returns the messages emitted.
+
+export function openRoom(state: RoomState, cb: RoomCallbacks): void {
+  state.running = true;
+
+  const openMsg: RoomMessage = {
+    timestamp: new Date(),
+    agent: "SYSTEM",
+    content: `Topic: "${state.config.topic}"`,
+    color: "\x1b[90m",
+    kind: "system",
+  };
+  state.history.push(openMsg);
+  cb.onMessage(openMsg);
+
+  for (const agent of state.activeAgents) {
+    const msg: RoomMessage = {
+      timestamp: new Date(),
+      agent: agent.personality.name,
+      content: agent.personality.tagline,
+      color: agent.personality.color,
+      kind: "join",
+      providerLabel: agent.providerName,
+      modelLabel: agent.model,
+    };
+    state.history.push(msg);
+    cb.onMessage(msg);
+    state.turnsSinceSpoke.set(agent.personality.name, 2);
+  }
+}
+
+// ── Step: run exactly one speaker turn ─────────────────────────────
+// Returns the agent who spoke, or null if the room has stopped.
+// Churn (join/leave) is evaluated internally on the appropriate interval.
+
+export async function stepRoom(
+  state: RoomState,
+  cb: RoomCallbacks,
+): Promise<AgentConfig | null> {
+  if (!state.running) return null;
+
+  state.turnCount++;
+
+  // Increment silence counters for all active agents
+  for (const agent of state.activeAgents) {
+    const name = agent.personality.name;
+    state.turnsSinceSpoke.set(name, (state.turnsSinceSpoke.get(name) ?? 0) + 1);
+  }
+
+  // Churn (only in free/auto mode)
+  if (!state.governed && state.turnCount % state.config.churnIntervalTurns === 0) {
+    evaluateChurn(state, cb);
+  }
+
+  // Pick a speaker (always exactly one per step)
+  const speaker = pickSpeaker(state);
+  if (!speaker) return null;
+
+  await agentSpeak(state, speaker, cb);
+
+  return state.running ? speaker : null;
+}
+
+// ── Inject a user message into history ─────────────────────────────
+
+export function injectUserMessage(
+  state: RoomState,
+  content: string,
+  cb: RoomCallbacks,
+): void {
+  const msg: RoomMessage = {
+    timestamp: new Date(),
+    agent: "YOU",
+    content: content.trim(),
+    color: "\x1b[97m",
+    kind: "user",
+  };
+  state.history.push(msg);
+  cb.onMessage(msg);
+}
+
+// ── Churn ───────────────────────────────────────────────────────────
 
 function evaluateChurn(state: RoomState, cb: RoomCallbacks): void {
   const { activeAgents, benchedAgents, config } = state;
 
-  // Maybe someone leaves
   if (activeAgents.length > config.minAgents) {
-    // Pick a random agent, weighted by low chattiness (quiet people leave first)
-    const leaveCandidate = activeAgents[Math.floor(Math.random() * activeAgents.length)];
-    const leaveProb = 0.25 * (1 - leaveCandidate.personality.chattiness);
+    const candidate = activeAgents[Math.floor(Math.random() * activeAgents.length)];
+    if (Math.random() < 0.25 * (1 - candidate.personality.chattiness)) {
+      state.activeAgents = activeAgents.filter(
+        a => a.personality.name !== candidate.personality.name,
+      );
+      state.benchedAgents.push(candidate);
 
-    if (Math.random() < leaveProb) {
-      // Remove from active
-      state.activeAgents = activeAgents.filter(a => a.personality.name !== leaveCandidate.personality.name);
-      state.benchedAgents.push(leaveCandidate);
-
-      const excuse = randomLeaveExcuse();
       const msg: RoomMessage = {
         timestamp: new Date(),
-        agent: leaveCandidate.personality.name,
-        content: excuse,
-        color: leaveCandidate.personality.color,
+        agent: candidate.personality.name,
+        content: randomLeaveExcuse(),
+        color: candidate.personality.color,
         kind: "leave",
       };
-      pushMessage(state, msg);
+      state.history.push(msg);
       cb.onMessage(msg);
     }
   }
 
-  // Maybe someone joins
   if (state.activeAgents.length < config.maxAgents && state.benchedAgents.length > 0) {
-    const joinProb = 0.3;
-    if (Math.random() < joinProb) {
+    if (Math.random() < 0.3) {
       const idx = Math.floor(Math.random() * state.benchedAgents.length);
       const joiner = state.benchedAgents.splice(idx, 1)[0];
       state.activeAgents.push(joiner);
-      state.turnsSinceSpoke.set(joiner.personality.name, 3); // eager to talk
+      state.turnsSinceSpoke.set(joiner.personality.name, 3);
 
-      const greeting = randomJoinGreeting();
       const msg: RoomMessage = {
         timestamp: new Date(),
         agent: joiner.personality.name,
-        content: `${joiner.personality.tagline} — ${greeting}`,
+        content: `${joiner.personality.tagline} — ${randomJoinGreeting()}`,
         color: joiner.personality.color,
         kind: "join",
         providerLabel: joiner.providerName,
         modelLabel: joiner.model,
       };
-      pushMessage(state, msg);
+      state.history.push(msg);
       cb.onMessage(msg);
     }
   }
 }
 
-// ── Pick next speaker(s) ────────────────────────────────────────────
+// ── Pick one speaker ────────────────────────────────────────────────
 
-function pickSpeakers(state: RoomState): AgentConfig[] {
+function pickSpeaker(state: RoomState): AgentConfig | null {
   const candidates: AgentConfig[] = [];
 
   for (const agent of state.activeAgents) {
     const name = agent.personality.name;
     const turns = state.turnsSinceSpoke.get(name) ?? 2;
-
     if (shouldSpeak(agent, state.lastSpeaker, turns)) {
       candidates.push(agent);
     }
   }
 
-  // If nobody wants to talk, force the least-recent speaker
+  // Force the most-silent agent if nobody volunteers
   if (candidates.length === 0 && state.activeAgents.length > 0) {
     const sorted = [...state.activeAgents]
       .filter(a => a.personality.name !== state.lastSpeaker)
@@ -155,11 +216,8 @@ function pickSpeakers(state: RoomState): AgentConfig[] {
     if (sorted.length > 0) candidates.push(sorted[0]);
   }
 
-  // Limit to 1-2 speakers per round to keep pacing natural
-  // Shuffle and pick 1 (occasionally 2 for rapid back-and-forth)
-  const shuffled = candidates.sort(() => Math.random() - 0.5);
-  const count = Math.random() < 0.15 ? Math.min(2, shuffled.length) : 1;
-  return shuffled.slice(0, count);
+  if (candidates.length === 0) return null;
+  return candidates[Math.floor(Math.random() * candidates.length)];
 }
 
 // ── Generate a single agent response ────────────────────────────────
@@ -177,7 +235,6 @@ async function agentSpeak(
     state.governed,
   );
 
-  // Governed mode gets a higher token budget for thorough responses
   const maxTokens = state.governed
     ? Math.max(state.config.maxTokens * 2, 2048)
     : state.config.maxTokens;
@@ -192,22 +249,20 @@ async function agentSpeak(
       { baseUrl: agent.baseUrl, apiKey: agent.apiKey, signal: state.abortController.signal },
     );
 
-    // Strip leading "Name:" or "Name —" self-prefix that some models add
-    // despite being told not to. Match "DocK:", "DocK —", "DocK -", etc.
     const raw = result.content.trim();
     const selfPrefixRe = new RegExp(`^${name}\\s*[:\\-—]\\s*`, "i");
     const content = raw.replace(selfPrefixRe, "").trim();
+
     if (!content) {
-      // Surface empty responses so they're visible in the TUI
-      const emptyMsg: RoomMessage = {
+      const msg: RoomMessage = {
         timestamp: new Date(),
         agent: "SYSTEM",
         content: `[${name} returned an empty response]`,
         color: "\x1b[90m",
         kind: "system",
       };
-      pushMessage(state, emptyMsg);
-      cb.onMessage(emptyMsg);
+      state.history.push(msg);
+      cb.onMessage(msg);
       return;
     }
 
@@ -218,157 +273,28 @@ async function agentSpeak(
       color: agent.personality.color,
       kind: "chat",
     };
-    pushMessage(state, msg);
+    state.history.push(msg);
     cb.onMessage(msg);
 
     state.lastSpeaker = name;
     state.turnsSinceSpoke.set(name, 0);
   } catch (err: any) {
-    // AbortError = room was stopped intentionally, not a real error
     if (err?.name === "AbortError") return;
     const msg: RoomMessage = {
       timestamp: new Date(),
       agent: "SYSTEM",
-      content: `[${name} encountered an error: ${err.message}]`,
+      content: `[${name} error: ${err.message}]`,
       color: "\x1b[90m",
       kind: "system",
     };
-    pushMessage(state, msg);
+    state.history.push(msg);
     cb.onMessage(msg);
   }
 }
 
-// ── Main conversation loop ──────────────────────────────────────────
+// ── Abort-aware sleep (for pacing in free mode) ─────────────────────
 
-export async function runRoom(
-  state: RoomState,
-  cb: RoomCallbacks,
-): Promise<void> {
-  state.running = true;
-
-  // Opening system message
-  const openMsg: RoomMessage = {
-    timestamp: new Date(),
-    agent: "SYSTEM",
-    content: `Topic: "${state.config.topic}"`,
-    color: "\x1b[90m",
-    kind: "system",
-  };
-  pushMessage(state, openMsg);
-  cb.onMessage(openMsg);
-
-  // Announce initial agents
-  for (const agent of state.activeAgents) {
-    const msg: RoomMessage = {
-      timestamp: new Date(),
-      agent: agent.personality.name,
-      content: agent.personality.tagline,
-      color: agent.personality.color,
-      kind: "join",
-      providerLabel: agent.providerName,
-      modelLabel: agent.model,
-    };
-    pushMessage(state, msg);
-    cb.onMessage(msg);
-    state.turnsSinceSpoke.set(agent.personality.name, 2);
-  }
-
-  // Main loop
-  while (state.running) {
-    state.turnCount++;
-
-    // Increment turn counters for all active agents
-    for (const agent of state.activeAgents) {
-      const name = agent.personality.name;
-      state.turnsSinceSpoke.set(name, (state.turnsSinceSpoke.get(name) ?? 0) + 1);
-    }
-
-    // Every N turns, check for churn (skip in governed mode — no surprise entries)
-    if (!state.governed && state.turnCount % state.config.churnIntervalTurns === 0) {
-      evaluateChurn(state, cb);
-    }
-
-    // Pick who speaks this turn.
-    // In governed mode: always exactly one speaker at a time for focused depth.
-    const speakers = state.governed
-      ? pickSpeakers(state).slice(0, 1)
-      : pickSpeakers(state);
-
-    // Generate responses
-    for (const speaker of speakers) {
-      if (!state.running) break;
-
-      if (state.governed) {
-        // ── Governed mode: wait for /next BEFORE the agent speaks ──────
-        // Announce who is up next and wait
-        const nextMsg: RoomMessage = {
-          timestamp: new Date(),
-          agent: "SYSTEM",
-          content: `[${speaker.personality.name} is ready — /next to let them speak, or type a reply]`,
-          color: "\x1b[90m",
-          kind: "system",
-        };
-        cb.onMessage(nextMsg);
-
-        let advanced = false;
-        while (!advanced && state.running) {
-          await sleepAbortable(120, state.abortController.signal);
-          const input = cb.pollUserInput();
-          if (input === null) { state.running = false; break; }
-          if (input === "\x00NEXT") { advanced = true; break; }
-          if (input === "\x00FREE") { state.governed = false; cb.onGoverned?.(false); advanced = true; break; }
-          if (input === "\x00GOVERN") { /* already governed */ continue; }
-          if (input && input.trim()) {
-            // User replied — inject message then let agent speak
-            const userMsg: RoomMessage = {
-              timestamp: new Date(),
-              agent: "YOU",
-              content: input.trim(),
-              color: "\x1b[97m",
-              kind: "user",
-            };
-            pushMessage(state, userMsg);
-            cb.onMessage(userMsg);
-            advanced = true;
-          }
-        }
-        if (!state.running) break;
-      } else {
-        // ── Free mode: natural pacing delay ───────────────────────────
-        const jitter = Math.random() * 3000;
-        await sleepAbortable(state.config.turnDelayMs + jitter, state.abortController.signal);
-      }
-
-      if (!state.running) break;
-      await agentSpeak(state, speaker, cb);
-    }
-
-    // Check for user input and sentinels (free mode path)
-    if (!state.governed) {
-      const userInput = cb.pollUserInput();
-      if (userInput === null) { state.running = false; break; }
-      if (userInput === "\x00GOVERN") { state.governed = true; cb.onGoverned?.(true); continue; }
-      if (userInput && userInput.trim()) {
-        const userMsg: RoomMessage = {
-          timestamp: new Date(),
-          agent: "YOU",
-          content: userInput.trim(),
-          color: "\x1b[97m",
-          kind: "user",
-        };
-        pushMessage(state, userMsg);
-        cb.onMessage(userMsg);
-      }
-    }
-  }
-}
-
-export function stopRoom(state: RoomState): void {
-  state.running = false;
-  state.abortController.abort();
-}
-
-function sleepAbortable(ms: number, signal: AbortSignal): Promise<void> {
+export function sleepAbortable(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     const timer = setTimeout(resolve, ms);
     signal.addEventListener("abort", () => { clearTimeout(timer); resolve(); }, { once: true });
