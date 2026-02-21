@@ -267,6 +267,10 @@ async function main() {
 
       return undefined; // nothing pending
     },
+
+    onGoverned: (governed) => {
+      tui.handle.setGoverned(governed);
+    },
   };
 
   // ── Run the room engine ────────────────────────────────────────────

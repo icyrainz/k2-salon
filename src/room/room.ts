@@ -17,6 +17,8 @@ export interface RoomState {
   running: boolean;
   /** Aborts any in-flight LLM fetch when the room stops */
   abortController: AbortController;
+  /** Governed mode: room pauses after each turn and waits for /next */
+  governed: boolean;
 }
 
 export type RoomEventHandler = (msg: RoomMessage) => void;
@@ -33,6 +35,8 @@ export interface RoomCallbacks {
    * or null if user wants to quit.
    */
   pollUserInput: () => string | null | undefined;
+  /** Called when governed mode changes so the UI can update */
+  onGoverned?: (governed: boolean) => void;
 }
 
 // ── Create room ─────────────────────────────────────────────────────
@@ -61,6 +65,7 @@ export function createRoom(
     turnsSinceSpoke: new Map(),
     running: false,
     abortController: new AbortController(),
+    governed: true,
   };
 }
 
@@ -169,14 +174,20 @@ async function agentSpeak(
     state.config.topic,
     state.history,
     state.config.contextWindow,
+    state.governed,
   );
+
+  // Governed mode gets a higher token budget for thorough responses
+  const maxTokens = state.governed
+    ? Math.max(state.config.maxTokens * 2, 2048)
+    : state.config.maxTokens;
 
   const name = agent.personality.name;
 
   try {
     const result = await complete(
       agent.provider,
-      { model: agent.model, messages, temperature: agent.temperature ?? 0.9, maxTokens: state.config.maxTokens },
+      { model: agent.model, messages, temperature: agent.temperature ?? 0.9, maxTokens },
       { onToken: (token) => cb.onStreamToken(name, token), onDone: () => cb.onStreamDone(name) },
       { baseUrl: agent.baseUrl, apiKey: agent.apiKey, signal: state.abortController.signal },
     );
@@ -272,42 +283,80 @@ export async function runRoom(
       state.turnsSinceSpoke.set(name, (state.turnsSinceSpoke.get(name) ?? 0) + 1);
     }
 
-    // Every N turns, check for churn
-    if (state.turnCount % state.config.churnIntervalTurns === 0) {
+    // Every N turns, check for churn (skip in governed mode — no surprise entries)
+    if (!state.governed && state.turnCount % state.config.churnIntervalTurns === 0) {
       evaluateChurn(state, cb);
     }
 
-    // Pick who speaks this turn
-    const speakers = pickSpeakers(state);
+    // Pick who speaks this turn.
+    // In governed mode: always exactly one speaker at a time for focused depth.
+    const speakers = state.governed
+      ? pickSpeakers(state).slice(0, 1)
+      : pickSpeakers(state);
 
-    // Generate responses (sequential for natural feel)
+    // Generate responses
     for (const speaker of speakers) {
       if (!state.running) break;
       await agentSpeak(state, speaker, cb);
 
-      // Natural pacing delay — base + wide random jitter so turns feel organic.
-      // Abortable so /quit exits immediately instead of waiting out the delay.
-      const jitter = Math.random() * 3000;
-      await sleepAbortable(state.config.turnDelayMs + jitter, state.abortController.signal);
+      if (state.governed) {
+        // ── Governed mode: pause and wait for /next ────────────────────
+        // Emit a prompt so the user knows to advance
+        const pauseMsg: RoomMessage = {
+          timestamp: new Date(),
+          agent: "SYSTEM",
+          content: `[governed] type /next to continue, or reply directly`,
+          color: "\x1b[90m",
+          kind: "system",
+        };
+        cb.onMessage(pauseMsg);
+
+        // Poll tightly until /next, a user message, mode change, or quit
+        let advanced = false;
+        while (!advanced && state.running) {
+          await sleepAbortable(120, state.abortController.signal);
+          const input = cb.pollUserInput();
+          if (input === null) { state.running = false; break; }
+          if (input === "\x00NEXT") { advanced = true; break; }
+          if (input === "\x00FREE") { state.governed = false; cb.onGoverned?.(false); advanced = true; break; }
+          if (input === "\x00GOVERN") { /* already governed */ continue; }
+          if (input && input.trim()) {
+            // User replied — inject message and continue
+            const userMsg: RoomMessage = {
+              timestamp: new Date(),
+              agent: "YOU",
+              content: input.trim(),
+              color: "\x1b[97m",
+              kind: "user",
+            };
+            pushMessage(state, userMsg);
+            cb.onMessage(userMsg);
+            advanced = true;
+          }
+        }
+      } else {
+        // ── Free mode: natural pacing delay ───────────────────────────
+        const jitter = Math.random() * 3000;
+        await sleepAbortable(state.config.turnDelayMs + jitter, state.abortController.signal);
+      }
     }
 
-    // Check for user input (non-blocking)
-    const userInput = cb.pollUserInput();
-    if (userInput === null) {
-      // null = user wants to quit
-      state.running = false;
-      break;
-    }
-    if (userInput && userInput.trim()) {
-      const userMsg: RoomMessage = {
-        timestamp: new Date(),
-        agent: "YOU",
-        content: userInput.trim(),
-        color: "\x1b[97m", // bright white
-        kind: "user",
-      };
-      pushMessage(state, userMsg);
-      cb.onMessage(userMsg);
+    // Check for user input and sentinels (free mode path)
+    if (!state.governed) {
+      const userInput = cb.pollUserInput();
+      if (userInput === null) { state.running = false; break; }
+      if (userInput === "\x00GOVERN") { state.governed = true; cb.onGoverned?.(true); continue; }
+      if (userInput && userInput.trim()) {
+        const userMsg: RoomMessage = {
+          timestamp: new Date(),
+          agent: "YOU",
+          content: userInput.trim(),
+          color: "\x1b[97m",
+          kind: "user",
+        };
+        pushMessage(state, userMsg);
+        cb.onMessage(userMsg);
+      }
     }
   }
 }

@@ -254,6 +254,8 @@ export interface TuiHandle {
   setActiveAgents: (agents: AgentConfig[]) => void;
   /** Show /who table */
   showWho: (agents: AgentConfig[]) => void;
+  /** Update governed mode indicator */
+  setGoverned: (governed: boolean) => void;
 }
 
 // We use a module-level event emitter pattern to communicate
@@ -265,7 +267,8 @@ type TuiEvent =
   | { type: "streamToken"; agent: string; token: string }
   | { type: "streamDone"; agent: string }
   | { type: "setActiveAgents"; agents: AgentConfig[] }
-  | { type: "showWho"; agents: AgentConfig[] };
+  | { type: "showWho"; agents: AgentConfig[] }
+  | { type: "setGoverned"; governed: boolean };
 
 let eventQueue: TuiEvent[] = [];
 let eventFlush: (() => void) | null = null;
@@ -288,6 +291,7 @@ function App({
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [activeAgents, setActiveAgents] = useState<AgentConfig[]>([]);
   const [whoDisplay, setWhoDisplay] = useState<AgentConfig[] | null>(null);
+  const [governed, setGoverned] = useState(true); // default governed
   const nextId = useRef(0);
   const streamingRef = useRef<{
     agent: string;
@@ -385,6 +389,10 @@ function App({
             // Auto-clear after 8 seconds
             setTimeout(() => setWhoDisplay(null), 8000);
             break;
+
+          case "setGoverned":
+            setGoverned(event.governed);
+            break;
         }
       }
     };
@@ -429,9 +437,22 @@ function App({
       }
 
       if (trimmed === "/who") {
-        // Show the who table — we need to emit via the handler
-        // which will call showWho with current active agents
         onUserInput("\x00WHO");
+        return;
+      }
+
+      if (trimmed === "/next" || trimmed === "/n") {
+        onUserInput("\x00NEXT");
+        return;
+      }
+
+      if (trimmed === "/govern") {
+        onUserInput("\x00GOVERN");
+        return;
+      }
+
+      if (trimmed === "/free") {
+        onUserInput("\x00FREE");
         return;
       }
 
@@ -478,15 +499,22 @@ function App({
       {/* Who table (shown when /who is active) */}
       {whoDisplay && <WhoTable agents={whoDisplay} />}
 
-      {/* Status bar */}
-      {activeAgents.length > 0 && (
-        <StatusBar
-          agents={activeAgents.map((a) => ({
-            name: a.personality.name,
-            color: a.personality.color,
-          }))}
-        />
-      )}
+      {/* Status bar + mode indicator */}
+      <Box>
+        {activeAgents.length > 0 && (
+          <StatusBar
+            agents={activeAgents.map((a) => ({
+              name: a.personality.name,
+              color: a.personality.color,
+            }))}
+          />
+        )}
+        <Text> </Text>
+        {governed
+          ? <Text color="yellow" bold>[GOVERNED — /next to advance, /free for auto]</Text>
+          : <Text dimColor>[AUTO — /govern to take control]</Text>
+        }
+      </Box>
 
       {/* Separator */}
       <Text dimColor>{"─".repeat(60)}</Text>
@@ -523,6 +551,7 @@ export function renderTui(
     setActiveAgents: (agents) =>
       emitTuiEvent({ type: "setActiveAgents", agents }),
     showWho: (agents) => emitTuiEvent({ type: "showWho", agents }),
+    setGoverned: (governed) => emitTuiEvent({ type: "setGoverned", governed }),
   };
 
   return {
