@@ -60,7 +60,7 @@ salon-podcast topic *args:
     report="reports/${slug}.md"
     bun run src/cli/simulate.ts "{{topic}}" {{args}} > "$report"
     echo "Report saved to $report"
-    env -u OPENAI_API_KEY bun run src/cli/podcast.ts "$report" --out "${slug}.mp3"
+    env -u OPENAI_API_KEY bun run src/cli/podcast.ts "$report" --out "reports/${slug}.mp3"
 
 # ── Setup ────────────────────────────────────────────────────────────
 
