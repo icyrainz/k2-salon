@@ -147,6 +147,7 @@ src/
 | Riko | moonshot | kimi-k2.5 | Startup founder |
 | DocK | fractal | gpt-oss-20b | Research scientist |
 | Jules | ollama | qwen3:8b | Retired diplomat |
+| Chip | zen | glm-5-free | Jaded GenZ tech worker |
 
 ## Pending work
 

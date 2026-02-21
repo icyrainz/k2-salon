@@ -42,7 +42,7 @@ room:
   maxTokens: 1024             # Max tokens per agent response (safety net, prompt handles brevity)
   turnDelayMs: 5000
   minAgents: 3
-  maxAgents: 5
+  maxAgents: 6
   churnIntervalTurns: 4
 
 # ── Roster ───────────────────────────────────────────────────────────
@@ -71,3 +71,7 @@ roster:
   - name: Jules                    # Retired diplomat
     provider: ollama
     model: qwen3:8b
+
+  - name: Chip                     # Jaded GenZ tech worker
+    provider: zen
+    model: glm-5-free
