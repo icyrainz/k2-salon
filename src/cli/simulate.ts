@@ -72,6 +72,13 @@ async function simulate() {
 
   // ── Render markdown report ──────────────────────────────────────────
 
+  const appearedNames = new Set(
+    allMessages
+      .filter(m => m.kind === "chat" || m.kind === "join")
+      .map(m => m.agent),
+  );
+  const rosterMap = new Map(roster.map(a => [a.personality.name, a]));
+
   const lines: string[] = [];
 
   lines.push(`# Simulation Report`);
@@ -79,7 +86,7 @@ async function simulate() {
   lines.push(`**Topic:** ${topic}`);
   lines.push(`**Mode:** simulation`);
   lines.push(`**Messages:** ${chatCount} chat messages`);
-  lines.push(`**Participants:** ${roster.map(a => a.personality.name).join(", ")}`);
+  lines.push(`**Participants:** ${[...appearedNames].join(", ")}`);
   lines.push(`**Generated:** ${new Date().toISOString()}`);
   lines.push(``);
   lines.push(`---`);
@@ -120,7 +127,10 @@ async function simulate() {
   lines.push(`## Participants`);
   lines.push(``);
 
-  for (const agent of roster) {
+  // Only list agents who actually appeared in the conversation
+  for (const name of appearedNames) {
+    const agent = rosterMap.get(name);
+    if (!agent) continue;
     const p = agent.personality;
     lines.push(`**${p.name}** — ${p.tagline}`);
     lines.push(`> ${p.traits.join(" · ")}`);
