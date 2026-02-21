@@ -50,12 +50,17 @@ podcast *args:
     env -u OPENAI_API_KEY bun run src/cli/podcast.ts {{args}}
 
 # One-shot: simulate and produce a podcast in one command
-# Saves the report to /tmp/salon-report.md first so it's never lost on failure.
+# Saves the report to reports/<slug>.md and audio to <slug>.mp3
 # Usage: just salon-podcast "your topic here"
 salon-podcast topic *args:
-    bun run src/cli/simulate.ts "{{topic}}" {{args}} > /tmp/salon-report.md
-    @echo "Report saved to /tmp/salon-report.md"
-    env -u OPENAI_API_KEY bun run src/cli/podcast.ts /tmp/salon-report.md
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p reports
+    slug=$(echo "{{topic}}" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/-*$//')
+    report="reports/${slug}.md"
+    bun run src/cli/simulate.ts "{{topic}}" {{args}} > "$report"
+    echo "Report saved to $report"
+    env -u OPENAI_API_KEY bun run src/cli/podcast.ts "$report" --out "${slug}.mp3"
 
 # ── Setup ────────────────────────────────────────────────────────────
 

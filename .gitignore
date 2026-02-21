@@ -15,4 +15,5 @@ bun.lock
 *.log
 
 # ── Generated output ─────────────────────────────────────────────────
+reports/
 *.mp3
