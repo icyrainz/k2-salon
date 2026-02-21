@@ -297,21 +297,19 @@ export async function runRoom(
     // Generate responses
     for (const speaker of speakers) {
       if (!state.running) break;
-      await agentSpeak(state, speaker, cb);
 
       if (state.governed) {
-        // ── Governed mode: pause and wait for /next ────────────────────
-        // Emit a prompt so the user knows to advance
-        const pauseMsg: RoomMessage = {
+        // ── Governed mode: wait for /next BEFORE the agent speaks ──────
+        // Announce who is up next and wait
+        const nextMsg: RoomMessage = {
           timestamp: new Date(),
           agent: "SYSTEM",
-          content: `[governed] type /next to continue, or reply directly`,
+          content: `[${speaker.personality.name} is ready — /next to let them speak, or type a reply]`,
           color: "\x1b[90m",
           kind: "system",
         };
-        cb.onMessage(pauseMsg);
+        cb.onMessage(nextMsg);
 
-        // Poll tightly until /next, a user message, mode change, or quit
         let advanced = false;
         while (!advanced && state.running) {
           await sleepAbortable(120, state.abortController.signal);
@@ -321,7 +319,7 @@ export async function runRoom(
           if (input === "\x00FREE") { state.governed = false; cb.onGoverned?.(false); advanced = true; break; }
           if (input === "\x00GOVERN") { /* already governed */ continue; }
           if (input && input.trim()) {
-            // User replied — inject message and continue
+            // User replied — inject message then let agent speak
             const userMsg: RoomMessage = {
               timestamp: new Date(),
               agent: "YOU",
@@ -334,11 +332,15 @@ export async function runRoom(
             advanced = true;
           }
         }
+        if (!state.running) break;
       } else {
         // ── Free mode: natural pacing delay ───────────────────────────
         const jitter = Math.random() * 3000;
         await sleepAbortable(state.config.turnDelayMs + jitter, state.abortController.signal);
       }
+
+      if (!state.running) break;
+      await agentSpeak(state, speaker, cb);
     }
 
     // Check for user input and sentinels (free mode path)
