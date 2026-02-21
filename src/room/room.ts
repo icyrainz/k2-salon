@@ -33,13 +33,23 @@ export function createRoom(
   allAgents: AgentConfig[],
   preloadedHistory?: RoomMessage[],
 ): RoomState {
-  const shuffled = [...allAgents].sort(() => Math.random() - 0.5);
   const initialCount = Math.min(
     config.maxAgents,
     Math.max(config.minAgents, Math.floor(allAgents.length * 0.5)),
   );
-  const active = shuffled.slice(0, initialCount);
-  const benched = shuffled.slice(initialCount);
+
+  // Priority agents (sorted by priority asc) always fill slots first.
+  // The remaining slots are filled by shuffling non-priority agents.
+  const priorityAgents = [...allAgents]
+    .filter(a => a.priority !== undefined)
+    .sort((a, b) => a.priority! - b.priority!);
+  const normalAgents = [...allAgents]
+    .filter(a => a.priority === undefined)
+    .sort(() => Math.random() - 0.5);
+
+  const ordered = [...priorityAgents, ...normalAgents];
+  const active = ordered.slice(0, initialCount);
+  const benched = ordered.slice(initialCount);
 
   return {
     config,
@@ -150,7 +160,10 @@ function evaluateChurn(state: RoomState, cb: RoomCallbacks): void {
   const { activeAgents, benchedAgents, config } = state;
 
   if (activeAgents.length > config.minAgents) {
-    const candidate = activeAgents[Math.floor(Math.random() * activeAgents.length)];
+    // Priority agents are never evicted by churn
+    const evictable = activeAgents.filter(a => a.priority === undefined);
+    if (evictable.length === 0) return;
+    const candidate = evictable[Math.floor(Math.random() * evictable.length)];
     if (Math.random() < 0.25 * (1 - candidate.personality.chattiness)) {
       state.activeAgents = activeAgents.filter(
         a => a.personality.name !== candidate.personality.name,

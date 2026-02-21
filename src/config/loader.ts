@@ -122,6 +122,7 @@ export function resolveRoster(
       baseUrl: providerEntry.baseUrl,
       apiKey: providerEntry.apiKey,
       temperature: providerEntry.temperature,
+      priority: entry.priority,
     });
   }
 

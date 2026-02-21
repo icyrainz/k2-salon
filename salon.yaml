@@ -56,10 +56,12 @@ roster:
   - name: Jules                    # Retired diplomat       [local — ollama]
     provider: ollama
     model: qwen3:8b
+    priority: 1                    # always joins first, never evicted by churn
 
   - name: Chip                     # Jaded GenZ tech worker [free — glm-5-free]
     provider: zen
     model: glm-5-free
+    priority: 2                    # always joins first, never evicted by churn
 
   - name: Sage                     # Stoic philosopher      [paid — zen]
     provider: zen

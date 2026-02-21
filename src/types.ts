@@ -52,6 +52,12 @@ export interface AgentConfig {
   apiKey?: string;
   /** Override temperature (from provider config; some APIs only allow 1) */
   temperature?: number;
+  /**
+   * Join priority (lower = higher priority). Priority agents are always
+   * placed in the initial active set and are immune to churn eviction.
+   * Agents without a priority are treated as lowest priority.
+   */
+  priority?: number;
 }
 
 // ── Room ────────────────────────────────────────────────────────────
@@ -103,6 +109,11 @@ export interface RosterEntry {
   model: string;
   /** Optional: full inline personality override */
   personality?: Partial<Personality>;
+  /**
+   * Join priority (lower = higher priority). Priority agents always join
+   * first and are immune to churn eviction. Omit for normal behaviour.
+   */
+  priority?: number;
 }
 
 export interface SalonConfig {
