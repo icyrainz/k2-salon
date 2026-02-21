@@ -13,23 +13,22 @@ import {
   createRoomDir,
   TranscriptWriter,
 } from "./room/persist.js";
-import { renderTui, type TuiHandle } from "./cli/tui.js";
+import { renderTui } from "./cli/tui.js";
 import type { RoomConfig, RoomMessage } from "./types.js";
 
-// ── Readline for pre-TUI user input ────────────────────────────────
-// We use readline only for room setup (name, topic) before ink takes
-// over stdin. Once the TUI is mounted, readline is closed.
-
-const rl = createInterface({
-  input: process.stdin,
-  output: process.stdout,
-  terminal: false,
-});
+// ── Pre-TUI prompts ────────────────────────────────────────────────
+// Readline is created lazily and destroyed before ink takes over.
 
 function ask(prompt: string): Promise<string> {
   return new Promise((resolve) => {
-    process.stdout.write(prompt);
-    rl.once("line", resolve);
+    const rl = createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+    rl.question(prompt, (answer) => {
+      rl.close();
+      resolve(answer);
+    });
   });
 }
 
@@ -166,9 +165,14 @@ async function main() {
   // Initialize transcript with participant names
   await transcript.init(roster.map((a) => a.personality.name));
 
-  // ── Close readline before ink takes over stdin ─────────────────────
+  // ── Ensure stdin is clean before ink ───────────────────────────────
+  // After any readline usage above, stdin may be paused or have
+  // lingering listeners. Reset it so ink can take full control.
 
-  rl.close();
+  process.stdin.removeAllListeners();
+  if (process.stdin.isPaused()) {
+    process.stdin.resume();
+  }
 
   // ── Non-blocking input buffer ──────────────────────────────────────
   // The TUI writes user lines here. The room loop polls this.
@@ -210,6 +214,8 @@ async function main() {
   }
 
   // ── Wire up room callbacks to TUI ──────────────────────────────────
+
+  let streamingAgent: string | null = null;
 
   const callbacks: RoomCallbacks = {
     onMessage: (msg) => {
@@ -261,8 +267,6 @@ async function main() {
       return undefined; // nothing pending
     },
   };
-
-  let streamingAgent: string | null = null;
 
   // ── Run the room engine ────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { render, Box, Text, useInput, useApp, useStdout } from "ink";
+import { render, Box, Text, useApp, useStdout } from "ink";
 import TextInput from "ink-text-input";
 import type { AgentConfig, RoomMessage } from "../types.js";
 
@@ -119,20 +119,28 @@ function ChatMessage({ dm }: { dm: DisplayMessage }) {
 
     case "user":
       return (
-        <Box>
-          <Text dimColor>{time} </Text>
-          <Text bold color="whiteBright">{"<YOU>"} </Text>
-          <Text>{msg.content}</Text>
+        <Box flexDirection="column">
+          <Box>
+            <Text dimColor>{time} </Text>
+            <Text bold color="whiteBright">{"<YOU>"}</Text>
+          </Box>
+          <Box marginLeft={6}>
+            <Text>{msg.content}</Text>
+          </Box>
         </Box>
       );
 
     case "chat": {
       const content = isStreaming ? (streamContent ?? "") : msg.content;
       return (
-        <Box>
-          <Text dimColor>{time} </Text>
-          <Text bold color={inkColor}>{"<"}{msg.agent}{">"} </Text>
-          <Text>{content}{isStreaming ? "\u2588" : ""}</Text>
+        <Box flexDirection="column">
+          <Box>
+            <Text dimColor>{time} </Text>
+            <Text bold color={inkColor}>{"<"}{msg.agent}{">"}</Text>
+          </Box>
+          <Box marginLeft={6}>
+            <Text>{content}{isStreaming ? "\u2588" : ""}</Text>
+          </Box>
         </Box>
       );
     }
@@ -411,14 +419,6 @@ function App({
       if (flushTimerRef.current) clearInterval(flushTimerRef.current);
     };
   }, []);
-
-  // Handle Ctrl+C
-  useInput((input, key) => {
-    if (input === "c" && key.ctrl) {
-      onQuit();
-      exit();
-    }
-  });
 
   // Handle user submit
   const handleSubmit = useCallback(
