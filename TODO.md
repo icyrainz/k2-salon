@@ -1,5 +1,23 @@
 # k2-salon -- TODO
 
+## Test coverage
+
+No tests exist. The step-based engine is very testable — `stepRoom()` with
+mock providers would be straightforward. Priority areas:
+
+- **Room engine**: `createRoom`, `stepRoom`, `evaluateChurn`, speaker selection
+  weights. All pure-ish functions with injectable callbacks.
+- **Personality system**: `shouldSpeak` probability math, `buildSystemPrompt`
+  output for verbose vs chat mode, contrarianism directives.
+- **Provider abstraction**: Mock HTTP responses for each provider kind
+  (openrouter, openai-compat, ollama). Test temperature retry fallback.
+- **Config loader**: `${ENV_VAR}` resolution, roster binding to providers,
+  validation of missing providers.
+- **Persistence**: Round-trip test — write a transcript, read it back, verify
+  frontmatter and message parsing.
+
+---
+
 ## Rolling conversation summary
 
 ### Problem
@@ -48,3 +66,69 @@ Implement a rolling summary system:
 - Should the summary be visible in the chat pane? Probably as a dim system
   message: `* [Summary updated: The group discussed X, Y, Z...]`
 - Token budget for the summary itself (200-300 tokens should suffice)
+
+---
+
+## Error recovery mid-stream
+
+If an LLM call fails partway through `agentSpeak()`, that turn is silently
+lost. This is non-catastrophic but degrades the experience.
+
+Options:
+- **Retry with same agent**: Simple, but risks double-speaking if the partial
+  response was already streamed to the UI.
+- **Fallback to another provider**: Pick a different agent to speak instead.
+  Requires the engine to know which providers are healthy.
+- **Exponential backoff + skip**: Retry once or twice, then skip the turn and
+  log a system message (`* [Sage couldn't respond, skipping turn]`).
+
+Probably start with retry-once + skip-with-system-message. Keep it simple.
+
+---
+
+## TTS concurrency limit
+
+`src/cli/podcast.ts` parallelizes all TTS synthesis calls with no cap. A long
+transcript (50+ segments) could hit OpenAI rate limits.
+
+Fix: Add a simple semaphore/pool (e.g. concurrency of 5-10) around the
+`Promise.all(segments.map(...))` in `synthesiseSegments()`. No external
+dependency needed — a counting semaphore is ~15 lines.
+
+---
+
+## Split provider.ts into per-provider modules
+
+`src/providers/provider.ts` is 356 lines handling three distinct provider
+protocols. As more providers are added, this will get unwieldy.
+
+Proposed structure:
+```
+src/providers/
+  provider.ts        → Unified complete() + listModels() dispatch
+  openrouter.ts      → completeOpenRouter()
+  openai-compat.ts   → completeOpenAICompat()
+  ollama.ts          → completeOllama()
+```
+
+Each module exports its `complete*()` and `listModels*()` functions.
+The main `provider.ts` becomes a thin dispatcher.
+
+---
+
+## Future ideas
+
+These aren't bugs or debt — just directions the architecture naturally supports:
+
+- **Agent memory**: Per-agent persistent memory across sessions (opinions
+  formed, facts learned, relationships with other agents).
+- **Topic branching**: Let the conversation fork into sub-topics with
+  different agent subsets, then reconverge.
+- **Voting / consensus**: Agents vote on propositions; track agreement
+  evolution over time.
+- **Multi-room**: Multiple concurrent rooms with agents that can move
+  between them (the step-based engine already supports multiple instances).
+- **Web UI**: The engine is UI-agnostic — a WebSocket bridge to a browser
+  client would slot in alongside the TUI with no engine changes.
+- **Configurable TTS voices**: Currently hardcoded voice mapping in
+  podcast.ts. Could move to roster config (`voice: "nova"`) per agent.
