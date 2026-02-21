@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 
+# ── Room data (personal conversations) ──────────────────────────────
+rooms/
+
 # ── Dependencies ─────────────────────────────────────────────────────
 node_modules/
 

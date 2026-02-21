@@ -171,7 +171,7 @@ async function agentSpeak(
   try {
     const result = await complete(
       agent.provider,
-      { model: agent.model, messages, temperature: 0.9, maxTokens: 300 },
+      { model: agent.model, messages, temperature: 0.9, maxTokens: state.config.maxTokens },
       { onToken: (token) => cb.onStreamToken(name, token), onDone: () => cb.onStreamDone(name) },
       { baseUrl: agent.baseUrl, apiKey: agent.apiKey },
     );

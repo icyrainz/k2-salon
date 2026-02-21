@@ -21,6 +21,7 @@ export const DEFAULT_CONFIG: SalonConfig = {
   },
   room: {
     contextWindow: 30,
+    maxTokens: 1024,
     turnDelayMs: 800,
     minAgents: 3,
     maxAgents: 5,

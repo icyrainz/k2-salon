@@ -38,6 +38,7 @@ providers:
 
 room:
   contextWindow: 30
+  maxTokens: 1024             # Max tokens per agent response
   turnDelayMs: 800
   minAgents: 3
   maxAgents: 5

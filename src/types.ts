@@ -58,6 +58,9 @@ export interface RoomMessage {
   content: string;
   color: string;
   kind: "chat" | "join" | "leave" | "system" | "user";
+  /** Provider key + model (set on join messages for display) */
+  providerLabel?: string;
+  modelLabel?: string;
 }
 
 export interface RoomConfig {
@@ -65,6 +68,8 @@ export interface RoomConfig {
   topic: string;
   /** Max messages to keep in context window sent to LLMs */
   contextWindow: number;
+  /** Max tokens per agent response */
+  maxTokens: number;
   /** Base delay in ms between agent turns (adds natural pacing) */
   turnDelayMs: number;
   /** Min number of agents present at any time */
