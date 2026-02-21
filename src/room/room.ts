@@ -4,6 +4,7 @@ import { buildMessages, shouldSpeak } from "../agents/personality.js";
 import { randomJoinGreeting, randomLeaveExcuse } from "../agents/roster.js";
 
 // ── Room state ──────────────────────────────────────────────────────
+// Purely conversational state — no UI mode flags.
 
 export interface RoomState {
   config: RoomConfig;
@@ -15,10 +16,26 @@ export interface RoomState {
   turnsSinceSpoke: Map<string, number>;
   running: boolean;
   abortController: AbortController;
-  governed: boolean;
 }
 
-// ── Callbacks (streaming only — no polling) ─────────────────────────
+// ── Step options ────────────────────────────────────────────────────
+
+export interface StepOptions {
+  /**
+   * When true agents write longer, more developed responses (2-4 paragraphs).
+   * When false (default) they write short chat-style messages (2-4 sentences).
+   * The TUI sets this to true in governed mode; simulation always uses true.
+   */
+  verbose?: boolean;
+  /**
+   * When true, churn (join/leave) is evaluated on this step if the interval
+   * is due. The TUI enables this in free mode; simulation disables it for a
+   * stable, reproducible cast.
+   */
+  churn?: boolean;
+}
+
+// ── Callbacks ───────────────────────────────────────────────────────
 
 export interface RoomCallbacks {
   onMessage: (msg: RoomMessage) => void;
@@ -38,8 +55,7 @@ export function createRoom(
     Math.max(config.minAgents, Math.floor(allAgents.length * 0.5)),
   );
 
-  // Priority agents (sorted by priority asc) always fill slots first.
-  // The remaining slots are filled by shuffling non-priority agents.
+  // Priority agents always fill the first slots; rest are shuffled.
   const priorityAgents = [...allAgents]
     .filter(a => a.priority !== undefined)
     .sort((a, b) => a.priority! - b.priority!);
@@ -61,7 +77,6 @@ export function createRoom(
     turnsSinceSpoke: new Map(),
     running: false,
     abortController: new AbortController(),
-    governed: true,
   };
 }
 
@@ -73,7 +88,7 @@ export function stopRoom(state: RoomState): void {
 }
 
 // ── Open room: emit topic + join messages ───────────────────────────
-// Call once before the first stepRoom(). Returns the messages emitted.
+// Call once before the first stepRoom().
 
 export function openRoom(state: RoomState, cb: RoomCallbacks): void {
   state.running = true;
@@ -106,32 +121,31 @@ export function openRoom(state: RoomState, cb: RoomCallbacks): void {
 
 // ── Step: run exactly one speaker turn ─────────────────────────────
 // Returns the agent who spoke, or null if the room has stopped.
-// Churn (join/leave) is evaluated internally on the appropriate interval.
 
 export async function stepRoom(
   state: RoomState,
   cb: RoomCallbacks,
+  opts: StepOptions = {},
 ): Promise<AgentConfig | null> {
   if (!state.running) return null;
 
+  const { verbose = false, churn = false } = opts;
+
   state.turnCount++;
 
-  // Increment silence counters for all active agents
   for (const agent of state.activeAgents) {
     const name = agent.personality.name;
     state.turnsSinceSpoke.set(name, (state.turnsSinceSpoke.get(name) ?? 0) + 1);
   }
 
-  // Churn (only in free/auto mode)
-  if (!state.governed && state.turnCount % state.config.churnIntervalTurns === 0) {
+  if (churn && state.turnCount % state.config.churnIntervalTurns === 0) {
     evaluateChurn(state, cb);
   }
 
-  // Pick a speaker (always exactly one per step)
   const speaker = pickSpeaker(state);
   if (!speaker) return null;
 
-  await agentSpeak(state, speaker, cb);
+  await agentSpeak(state, speaker, cb, verbose);
 
   return state.running ? speaker : null;
 }
@@ -160,7 +174,6 @@ function evaluateChurn(state: RoomState, cb: RoomCallbacks): void {
   const { activeAgents, benchedAgents, config } = state;
 
   if (activeAgents.length > config.minAgents) {
-    // Priority agents are never evicted by churn
     const evictable = activeAgents.filter(a => a.priority === undefined);
     if (evictable.length === 0) return;
     const candidate = evictable[Math.floor(Math.random() * evictable.length)];
@@ -217,7 +230,6 @@ function pickSpeaker(state: RoomState): AgentConfig | null {
     }
   }
 
-  // Force the most-silent agent if nobody volunteers
   if (candidates.length === 0 && state.activeAgents.length > 0) {
     const sorted = [...state.activeAgents]
       .filter(a => a.personality.name !== state.lastSpeaker)
@@ -239,16 +251,17 @@ async function agentSpeak(
   state: RoomState,
   agent: AgentConfig,
   cb: RoomCallbacks,
+  verbose: boolean,
 ): Promise<void> {
   const messages = buildMessages(
     agent,
     state.config.topic,
     state.history,
     state.config.contextWindow,
-    state.governed,
+    verbose,
   );
 
-  const maxTokens = state.governed
+  const maxTokens = verbose
     ? Math.max(state.config.maxTokens * 2, 2048)
     : state.config.maxTokens;
 
@@ -305,7 +318,7 @@ async function agentSpeak(
   }
 }
 
-// ── Abort-aware sleep (for pacing in free mode) ─────────────────────
+// ── Abort-aware sleep (used by TUI loop for pacing) ─────────────────
 
 export function sleepAbortable(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {

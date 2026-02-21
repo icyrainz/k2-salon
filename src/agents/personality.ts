@@ -2,8 +2,8 @@ import type { AgentConfig, ChatMessage, Personality, RoomMessage } from "../type
 
 // ── Build the system prompt for an agent given their personality ────
 
-export function buildSystemPrompt(p: Personality, topic: string, governed: boolean): string {
-  const lengthRules = governed
+export function buildSystemPrompt(p: Personality, topic: string, verbose: boolean): string {
+  const lengthRules = verbose
     ? [
         `- LENGTH: Write 2-4 thorough paragraphs. Each turn is your chance to develop a real argument.`,
         `- Go deep — explain your reasoning, give examples, anticipate counterarguments.`,
@@ -47,9 +47,9 @@ export function buildMessages(
   topic: string,
   history: RoomMessage[],
   contextWindow: number,
-  governed: boolean = false,
+  verbose: boolean = false,
 ): ChatMessage[] {
-  const system = buildSystemPrompt(agent.personality, topic, governed);
+  const system = buildSystemPrompt(agent.personality, topic, verbose);
   const messages: ChatMessage[] = [{ role: "system", content: system }];
 
   // Take the last N messages from history

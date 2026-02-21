@@ -1,13 +1,12 @@
 /**
- * Headless simulation mode — no TUI, no polling, no governed wait loop.
+ * Headless simulation mode — no TUI, no input, purely turn-based.
  *
  * Usage:
- *   bun run src/cli/simulate.ts "your topic" [--messages 10] [--free]
+ *   bun run src/cli/simulate.ts "your topic" [--messages 10]
  *   just simulate "your topic"
  *
  * Flags:
  *   --messages N   Number of chat messages to collect (default 10)
- *   --free         Use free mode (shorter responses) instead of governed
  */
 
 import { PERSONALITY_PRESETS } from "../agents/roster.js";
@@ -21,13 +20,10 @@ const args = process.argv.slice(2);
 
 let topic = "";
 let targetMessages = 10;
-let freeMode = false;
 
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--messages" && args[i + 1]) {
     targetMessages = parseInt(args[++i], 10);
-  } else if (args[i] === "--free") {
-    freeMode = true;
   } else if (!args[i].startsWith("--") && !topic) {
     topic = args[i].trim();
   }
@@ -42,14 +38,13 @@ if (!topic) {
 
 async function simulate() {
   process.stderr.write(`\nSimulating: "${topic}"\n`);
-  process.stderr.write(`Target: ${targetMessages} chat messages — ${freeMode ? "free" : "governed"} mode\n\n`);
+  process.stderr.write(`Target: ${targetMessages} chat messages\n\n`);
 
   const salonConfig = await loadConfig();
   const roster = resolveRoster(salonConfig, PERSONALITY_PRESETS);
 
   const config: RoomConfig = { topic, ...salonConfig.room };
   const state = createRoom(config, roster);
-  state.governed = !freeMode;
 
   const allMessages: RoomMessage[] = [];
   let chatCount = 0;
@@ -64,7 +59,7 @@ async function simulate() {
 
   // Step until we have enough chat messages — no polling, no wait loop
   while (chatCount < targetMessages) {
-    await stepRoom(state, callbacks);
+    await stepRoom(state, callbacks, { verbose: true, churn: false });
 
     // Count chat messages collected since last check
     const newCount = allMessages.filter(m => m.kind === "chat").length;
@@ -82,7 +77,7 @@ async function simulate() {
   lines.push(`# Simulation Report`);
   lines.push(``);
   lines.push(`**Topic:** ${topic}`);
-  lines.push(`**Mode:** ${freeMode ? "free" : "governed"}`);
+  lines.push(`**Mode:** simulation`);
   lines.push(`**Messages:** ${chatCount} chat messages`);
   lines.push(`**Participants:** ${roster.map(a => a.personality.name).join(", ")}`);
   lines.push(`**Generated:** ${new Date().toISOString()}`);

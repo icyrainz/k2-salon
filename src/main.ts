@@ -171,15 +171,19 @@ async function main() {
   // ── Open room (emits topic + join messages) ────────────────────────
   openRoom(state, callbacks);
   tui.handle.setActiveAgents([...state.activeAgents]);
-  tui.handle.setGoverned(state.governed);
+
+  // governed is a TUI-only concept: true = step-by-step, false = auto-paced
+  let governed = true;
+  tui.handle.setGoverned(governed);
 
   // ── Main TUI loop ──────────────────────────────────────────────────
-  // The governed wait and free-mode pacing both live here, not in the engine.
+  // governed wait and free-mode pacing live here — the engine knows nothing
+  // about either. verbose=true in governed (deep responses), churn only in free.
 
   while (state.running && !wantsQuit) {
     const nextSpeaker = pickNextSpeakerPreview(state);
 
-    if (state.governed) {
+    if (governed) {
       // Announce who is up and wait for /next (or a user message)
       if (nextSpeaker) {
         const readyMsg: RoomMessage = {
@@ -196,52 +200,39 @@ async function main() {
       let advanced = false;
       while (!advanced && state.running && !wantsQuit) {
         await sleepAbortable(120, state.abortController.signal);
-
-        // Drain one item from the input buffer
         const input = inputBuffer.shift();
         if (input === undefined) continue;
         if (input === "\x00NEXT") { advanced = true; break; }
-        if (input === "\x00FREE") {
-          state.governed = false;
-          tui.handle.setGoverned(false);
-          advanced = true;
-          break;
-        }
+        if (input === "\x00FREE") { governed = false; tui.handle.setGoverned(false); advanced = true; break; }
         if (input === "\x00GOVERN") continue; // already governed
-        if (input.trim()) {
-          injectUserMessage(state, input, callbacks);
-          advanced = true;
-        }
+        if (input.trim()) { injectUserMessage(state, input, callbacks); advanced = true; }
       }
 
       if (!state.running || wantsQuit) break;
 
-      // Drain any stale /next that queued up during streaming
-      const step = stepRoom(state, callbacks);
-      await step;
+      await stepRoom(state, callbacks, { verbose: true, churn: false });
 
-      // Flush stale sentinels accumulated while agent was streaming
+      // Discard stale /next sentinels that queued during streaming;
+      // honour mode changes and preserve real text messages.
       let stale: string | undefined;
       while ((stale = inputBuffer.shift()) !== undefined) {
-        if (stale === "\x00FREE") { state.governed = false; tui.handle.setGoverned(false); break; }
-        if (stale === "\x00GOVERN") break; // handled below
         if (stale === "\x00NEXT") continue; // discard
+        if (stale === "\x00FREE") { governed = false; tui.handle.setGoverned(false); break; }
+        if (stale === "\x00GOVERN") break;
         if (stale.trim()) { injectUserMessage(state, stale, callbacks); break; }
       }
     } else {
-      // Free mode: natural pacing delay, then step
+      // Free mode: natural pacing, then step with churn enabled
       const jitter = Math.random() * 3000;
       await sleepAbortable(state.config.turnDelayMs + jitter, state.abortController.signal);
 
       if (!state.running || wantsQuit) break;
 
-      // Check for user input before stepping
       const input = inputBuffer.shift();
-      if (input === null || wantsQuit) break;
-      if (input === "\x00GOVERN") { state.governed = true; tui.handle.setGoverned(true); }
+      if (input === "\x00GOVERN") { governed = true; tui.handle.setGoverned(true); }
       else if (input?.trim()) injectUserMessage(state, input, callbacks);
 
-      await stepRoom(state, callbacks);
+      await stepRoom(state, callbacks, { verbose: false, churn: true });
     }
   }
 

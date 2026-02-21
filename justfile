@@ -39,7 +39,7 @@ models:
     bun run src/cli/models.ts
 
 # Run a headless simulation and print a markdown report to stdout
-# Usage: just simulate "your topic" [-- --messages 20 --free]
+# Usage: just simulate "your topic" [-- --messages 20]
 simulate topic *args:
     bun run src/cli/simulate.ts "{{topic}}" {{args}}
 
@@ -79,5 +79,5 @@ fish-setup:
 # just models                     See what models are available
 
 # just simulate "AI ethics"        Run a headless 10-message simulation
-# just simulate "AI ethics" -- --messages 20 --free
+# just simulate "AI ethics" -- --messages 20
 # just fish-setup                 Install tab completion for fish
