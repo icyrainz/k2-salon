@@ -259,6 +259,7 @@ async function agentSpeak(
     state.history,
     state.config.contextWindow,
     verbose,
+    state.config.language,
   );
 
   const maxTokens = verbose

@@ -20,6 +20,7 @@ export const DEFAULT_CONFIG: SalonConfig = {
     },
   },
   room: {
+    language: "English",
     contextWindow: 30,
     maxTokens: 1024,
     turnDelayMs: 5000,

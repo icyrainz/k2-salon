@@ -21,6 +21,8 @@ const ROOMS_DIR = "rooms";
 
 export interface RoomMeta {
   topic: string;
+  /** Language agents must use when responding (default: "English") */
+  language?: string;
   created: string;
   lastSession: number;
 }

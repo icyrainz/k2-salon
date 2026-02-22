@@ -76,6 +76,8 @@ export interface RoomMessage {
 export interface RoomConfig {
   /** The debate topic */
   topic: string;
+  /** Language agents must use when responding (default: "English") */
+  language: string;
   /** Max messages to keep in context window sent to LLMs */
   contextWindow: number;
   /** Max tokens per agent response */

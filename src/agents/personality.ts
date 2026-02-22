@@ -2,7 +2,7 @@ import type { AgentConfig, ChatMessage, Personality, RoomMessage } from "../type
 
 // ── Build the system prompt for an agent given their personality ────
 
-export function buildSystemPrompt(p: Personality, topic: string, verbose: boolean): string {
+export function buildSystemPrompt(p: Personality, topic: string, verbose: boolean, language: string = "English"): string {
   const lengthRules = verbose
     ? [
         `- LENGTH: Write 2-4 thorough paragraphs. Each turn is your chance to develop a real argument.`,
@@ -27,6 +27,7 @@ export function buildSystemPrompt(p: Personality, topic: string, verbose: boolea
     ``,
     `RULES FOR THIS DISCUSSION:`,
     `- You are discussing: "${topic}"`,
+    `- LANGUAGE: You MUST write ALL your responses in ${language}. Do not switch to any other language, regardless of what others write.`,
     `- Multiple people are participating. You see their names before their messages.`,
     ...lengthRules,
     `- Stay in character. Your personality should come through naturally.`,
@@ -48,8 +49,9 @@ export function buildMessages(
   history: RoomMessage[],
   contextWindow: number,
   verbose: boolean = false,
+  language: string = "English",
 ): ChatMessage[] {
-  const system = buildSystemPrompt(agent.personality, topic, verbose);
+  const system = buildSystemPrompt(agent.personality, topic, verbose, language);
   const messages: ChatMessage[] = [{ role: "system", content: system }];
 
   // Take the last N messages from history

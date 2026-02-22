@@ -36,13 +36,25 @@ function ask(prompt: string): Promise<string> {
 // ── Main ────────────────────────────────────────────────────────────
 
 async function main() {
-  const arg = process.argv.slice(2).join(" ").trim();
+  // Parse args: strip --lang <value> flag before treating remainder as room name
+  const rawArgs = process.argv.slice(2);
+  let langFlag: string | undefined;
+  const filteredArgs: string[] = [];
+  for (let i = 0; i < rawArgs.length; i++) {
+    if (rawArgs[i] === "--lang" && i + 1 < rawArgs.length) {
+      langFlag = rawArgs[++i];
+    } else {
+      filteredArgs.push(rawArgs[i]);
+    }
+  }
+  const arg = filteredArgs.join(" ").trim();
 
   const salonConfig = await loadConfig();
   const roster = resolveRoster(salonConfig, PERSONALITY_PRESETS);
 
   let roomName: string;
   let topic: string;
+  let language: string;
   let preloadedHistory: RoomMessage[] = [];
   let isResumed = false;
 
@@ -59,6 +71,7 @@ async function main() {
     const meta = await loadRoomMeta(roomName);
     if (meta) {
       topic = meta.topic;
+      language = langFlag ?? meta.language ?? salonConfig.room.language;
       isResumed = true;
       const prevMessages = await loadPreviousSessions(roomName, salonConfig.room.contextWindow);
       preloadedHistory.push(...prevMessages);
@@ -83,14 +96,23 @@ async function main() {
         topic = topic.trim();
         if (!topic) { process.stdout.write("No topic provided. Exiting.\n"); process.exit(0); }
       }
-      await saveRoomMeta(roomName, { topic, created: new Date().toISOString(), lastSession: 0 });
+      language = langFlag ?? salonConfig.room.language;
+      await saveRoomMeta(roomName, { topic, language, created: new Date().toISOString(), lastSession: 0 });
     }
   } else {
     topic = await ask(`Creating new room "${roomName}". Topic: `);
     topic = topic.trim();
     if (!topic) { process.stdout.write("No topic provided. Exiting.\n"); process.exit(0); }
+
+    if (langFlag) {
+      language = langFlag;
+    } else {
+      const langAnswer = await ask("Language (leave blank for English): ");
+      language = langAnswer.trim() || salonConfig.room.language;
+    }
+
     await createRoomDir(roomName);
-    await saveRoomMeta(roomName, { topic, created: new Date().toISOString(), lastSession: 0 });
+    await saveRoomMeta(roomName, { topic, language, created: new Date().toISOString(), lastSession: 0 });
   }
 
   const session = await nextSessionNumber(roomName);
@@ -99,7 +121,7 @@ async function main() {
   const meta = await loadRoomMeta(roomName);
   if (meta) { meta.lastSession = session; await saveRoomMeta(roomName, meta); }
 
-  const config: RoomConfig = { topic, ...salonConfig.room };
+  const config: RoomConfig = { ...salonConfig.room, topic, language };
   const state = createRoom(config, roster, preloadedHistory);
 
   await transcript.init(roster.map((a) => a.personality.name));

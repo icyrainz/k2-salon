@@ -2,11 +2,12 @@
  * Headless simulation mode — no TUI, no input, purely turn-based.
  *
  * Usage:
- *   bun run src/cli/simulate.ts "your topic" [--messages 10]
+ *   bun run src/cli/simulate.ts "your topic" [--messages 10] [--lang Vietnamese]
  *   just simulate "your topic"
  *
  * Flags:
  *   --messages N   Number of chat messages to collect (default 10)
+ *   --lang LANG    Language agents must use (default: from salon.yaml or "English")
  */
 
 import { PERSONALITY_PRESETS } from "../agents/roster.js";
@@ -20,30 +21,36 @@ const args = process.argv.slice(2);
 
 let topic = "";
 let targetMessages = 10;
+let langFlag: string | undefined;
 
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--messages" && args[i + 1]) {
     targetMessages = parseInt(args[++i], 10);
+  } else if (args[i] === "--lang" && args[i + 1]) {
+    langFlag = args[++i];
   } else if (!args[i].startsWith("--") && !topic) {
     topic = args[i].trim();
   }
 }
 
 if (!topic) {
-  process.stderr.write("Usage: bun run src/cli/simulate.ts \"topic\" [--messages N] [--free]\n");
+  process.stderr.write("Usage: bun run src/cli/simulate.ts \"topic\" [--messages N] [--lang LANG]\n");
   process.exit(1);
 }
 
 // ── Run simulation ──────────────────────────────────────────────────
 
 async function simulate() {
-  process.stderr.write(`\nSimulating: "${topic}"\n`);
-  process.stderr.write(`Target: ${targetMessages} chat messages\n\n`);
-
   const salonConfig = await loadConfig();
   const roster = resolveRoster(salonConfig, PERSONALITY_PRESETS);
 
-  const config: RoomConfig = { topic, ...salonConfig.room };
+  const language = langFlag ?? salonConfig.room.language;
+
+  process.stderr.write(`\nSimulating: "${topic}"\n`);
+  process.stderr.write(`Language: ${language}\n`);
+  process.stderr.write(`Target: ${targetMessages} chat messages\n\n`);
+
+  const config: RoomConfig = { ...salonConfig.room, topic, language };
   const state = createRoom(config, roster);
 
   const allMessages: RoomMessage[] = [];
@@ -84,6 +91,7 @@ async function simulate() {
   lines.push(`# Simulation Report`);
   lines.push(``);
   lines.push(`**Topic:** ${topic}`);
+  lines.push(`**Language:** ${language}`);
   lines.push(`**Mode:** simulation`);
   lines.push(`**Messages:** ${chatCount} chat messages`);
   lines.push(`**Participants:** ${[...appearedNames].join(", ")}`);
