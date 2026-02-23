@@ -136,7 +136,7 @@ export function resolveRoster(
 
 // ── Check if an inline personality has all required fields ──────────
 
-function isFullPersonality(p: Partial<Personality>): p is Personality {
+export function isFullPersonality(p: Partial<Personality>): p is Personality {
   return !!(
     p.name &&
     p.color &&
@@ -170,13 +170,13 @@ const ANSI_TO_AGENT_COLOR: Record<string, AgentColor> = {
   "\x1b[97m": "whiteBright",
 };
 
-function normalizeColor(raw: string): AgentColor {
+export function normalizeColor(raw: string): AgentColor {
   return ANSI_TO_AGENT_COLOR[raw] ?? (raw as AgentColor);
 }
 
 // ── Recursively resolve ${ENV_VAR} in all string values ─────────────
 
-function resolveEnvVars(obj: any): any {
+export function resolveEnvVars(obj: any): any {
   if (typeof obj === "string") {
     return obj.replace(/\$\{([^}]+)\}/g, (_, varName) => {
       return process.env[varName] ?? `\${${varName}}`;

@@ -80,6 +80,10 @@ install:
 check:
     npx tsc --noEmit
 
+# Run tests
+test *args:
+    bun test {{args}}
+
 # Install fish shell completions (tab-complete room names)
 fish-setup:
     @mkdir -p ~/.config/fish/conf.d

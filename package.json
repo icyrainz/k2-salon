@@ -6,7 +6,8 @@
   "scripts": {
     "start": "bun run src/tui/main.ts",
     "dev": "bun --watch run src/tui/main.ts",
-    "models": "bun run src/cli/models.ts"
+    "models": "bun run src/cli/models.ts",
+    "test": "bun test"
   },
   "dependencies": {
     "@types/react": "^19.2.14",

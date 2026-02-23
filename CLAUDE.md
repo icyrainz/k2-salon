@@ -91,12 +91,18 @@ src/
 
 ## Testing & Linting
 
-- **Test Framework**: No external test framework currently (no Jest/Vitest).
+- **Test Framework**: Bun's built-in test runner (`bun:test`). Tests are
+  co-located next to source files as `*.test.ts`.
+- **Run all tests**: `just test` or `bun test`
+- **Run a single file**: `bun test src/core/speaker.test.ts`
+- **Run with filter**: `bun test --filter "shouldSpeak"`
 - **Type-checking**: Run `just check` or `npx tsc --noEmit`. **Always do this before finishing.**
-- **Running a single test**: Since there's no test framework, test specific modules by adding a temporary script or small inline test function, and execute it using `bun run <file>`. Don't commit temporary scripts.
 - **Formatting**: `npx prettier --write .`
 - **Git commands**: Use plain `git` (not `git -C <path>`) since the working
   directory is already the repo root. The `-C` flag breaks auto-approval flows.
+- **Test coverage**: Core layer (roster, personality, speaker, churn) and
+  engine layer (config, persist, salon-engine) have tests. TUI layer and
+  provider (network I/O) are not tested.
 
 ## Key patterns
 

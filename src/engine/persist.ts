@@ -193,7 +193,7 @@ export class TranscriptWriter {
 
 // ── Format a RoomMessage to markdown ────────────────────────────────
 
-function formatMessageToMarkdown(msg: RoomMessage): string {
+export function formatMessageToMarkdown(msg: RoomMessage): string {
   const time = fmtTimeISO(msg.timestamp);
 
   switch (msg.kind) {
@@ -225,7 +225,7 @@ function fmtTimeISO(d: Date): string {
 
 // ── Parse session markdown back into RoomMessage[] ──────────────────
 
-function parseSessionMarkdown(content: string): RoomMessage[] {
+export function parseSessionMarkdown(content: string): RoomMessage[] {
   const messages: RoomMessage[] = [];
 
   // Strip frontmatter
