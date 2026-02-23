@@ -1,7 +1,24 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { render, Box, Text, Static, useApp } from "ink";
+import { render, Box, Text, Static, useApp, useInput } from "ink";
 import TextInput from "ink-text-input";
 import type { AgentConfig, RoomMessage } from "../types.js";
+
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+function Spinner({ active }: { active: boolean }) {
+  const [frame, setFrame] = useState(0);
+
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(() => {
+      setFrame((f) => (f + 1) % SPINNER_FRAMES.length);
+    }, 80);
+    return () => clearInterval(timer);
+  }, [active]);
+
+  if (!active) return null;
+  return <Text color="cyan">{SPINNER_FRAMES[frame]}</Text>;
+}
 
 // ── ANSI color to ink color mapping ─────────────────────────────────
 
@@ -139,7 +156,7 @@ function ChatMessage({ dm }: { dm: DisplayMessage }) {
             <Text bold color={inkColor}>{"<"}{msg.agent}{">"}</Text>
           </Box>
           <Box marginLeft={6}>
-            <Text>{content}{isStreaming ? "\u2588" : ""}</Text>
+            <Text>{content}</Text>
           </Box>
         </Box>
       );
@@ -207,26 +224,83 @@ interface InputLineProps {
   onSubmit: (value: string) => void;
 }
 
+const COMMANDS = [
+  { cmd: "/next",   hint: "advance discussion" },
+  { cmd: "/who",    hint: "show participants" },
+  { cmd: "/govern", hint: "take control" },
+  { cmd: "/free",   hint: "auto mode" },
+  { cmd: "/quit",   hint: "exit" },
+] as const;
+
+type InputMode = "command" | "input";
+
 function InputLine({ onSubmit }: InputLineProps) {
+  const [mode, setMode] = useState<InputMode>("command");
+  const [commandIndex, setCommandIndex] = useState(0);
   const [value, setValue] = useState("");
 
-  const handleSubmit = useCallback(
+  const switchMode = useCallback(() => {
+    setMode((m) => (m === "command" ? "input" : "command"));
+    setValue("");
+  }, []);
+
+  const handleTextSubmit = useCallback(
     (val: string) => {
-      onSubmit(val);
+      if (val.trim()) onSubmit(val);
       setValue("");
+      setMode("command");
     },
     [onSubmit],
   );
 
+  // Command mode keys
+  useInput(
+    (input, key) => {
+      if (key.tab && key.shift) {
+        setCommandIndex((i) => (i - 1 + COMMANDS.length) % COMMANDS.length);
+      } else if (key.tab) {
+        setCommandIndex((i) => (i + 1) % COMMANDS.length);
+      } else if (key.downArrow || key.upArrow || (key.ctrl && input === "n") || (key.ctrl && input === "p")) {
+        switchMode();
+      } else if (key.return) {
+        onSubmit(COMMANDS[commandIndex].cmd);
+      }
+    },
+    { isActive: mode === "command" },
+  );
+
+  // Input mode keys — only handle mode-switch when input is empty
+  useInput(
+    (input, key) => {
+      if (
+        !value &&
+        (key.upArrow || (key.ctrl && input === "p") || key.escape)
+      ) {
+        switchMode();
+      }
+    },
+    { isActive: mode === "input" },
+  );
+
+  if (mode === "input") {
+    return (
+      <Box>
+        <Text dimColor>{">"} </Text>
+        <TextInput
+          value={value}
+          onChange={setValue}
+          onSubmit={handleTextSubmit}
+          focus={true}
+          placeholder="type your reply... [↑/Esc] commands"
+        />
+      </Box>
+    );
+  }
+
   return (
     <Box>
-      <Text dimColor>{">"} </Text>
-      <TextInput
-        value={value}
-        onChange={setValue}
-        onSubmit={handleSubmit}
-        placeholder="type here anytime, or just watch"
-      />
+      <Text bold color="green">{">"} {COMMANDS[commandIndex].cmd}</Text>
+      <Text dimColor>  {COMMANDS[commandIndex].hint}  [Tab] cycle commands  [↓] input mode</Text>
     </Box>
   );
 }
@@ -292,6 +366,11 @@ function App({
   const [activeAgents, setActiveAgents] = useState<AgentConfig[]>([]);
   const [whoDisplay, setWhoDisplay] = useState<AgentConfig[] | null>(null);
   const [governed, setGoverned] = useState(true); // default governed
+  const [agentActivity, setAgentActivity] = useState<{
+    agent: string;
+    color: string;
+    phase: "thinking" | "responding";
+  } | null>(null);
   const nextId = useRef(0);
   const streamingRef = useRef<{
     agent: string;
@@ -347,12 +426,21 @@ function App({
               ...prev,
               { id, msg: placeholder, streamContent: "", isStreaming: true },
             ]);
+            setAgentActivity({ agent: event.agent, color: event.color, phase: "thinking" });
             break;
           }
 
           case "streamToken": {
             const sr = streamingRef.current;
             if (sr && sr.agent === event.agent) {
+              if (sr.buffer.length === 0) {
+                // First token: transition from thinking → responding
+                setAgentActivity((prev) =>
+                  prev && prev.agent === event.agent
+                    ? { ...prev, phase: "responding" }
+                    : prev,
+                );
+              }
               sr.buffer += event.token;
             }
             break;
@@ -376,6 +464,7 @@ function App({
                     : dm,
                 ),
               );
+              setAgentActivity(null);
             }
             break;
           }
@@ -515,6 +604,19 @@ function App({
           : <Text dimColor>[AUTO — /govern to take control]</Text>
         }
       </Box>
+
+      {/* Agent activity indicator */}
+      {agentActivity && (
+        <Box>
+          <Text>  </Text>
+          <Spinner active={true} />
+          <Text> </Text>
+          <Text bold color={ansiToInk(agentActivity.color)}>{agentActivity.agent}</Text>
+          <Text dimColor>
+            {agentActivity.phase === "thinking" ? " thinking..." : " responding..."}
+          </Text>
+        </Box>
+      )}
 
       {/* Separator */}
       <Text dimColor>{"─".repeat(60)}</Text>

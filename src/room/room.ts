@@ -33,12 +33,19 @@ export interface StepOptions {
    * stable, reproducible cast.
    */
   churn?: boolean;
+  /**
+   * Force a specific agent to speak this turn (skips pickSpeaker).
+   * Used by governed mode to ensure the announced speaker is the one who talks.
+   */
+  speaker?: AgentConfig;
 }
 
 // ── Callbacks ───────────────────────────────────────────────────────
 
 export interface RoomCallbacks {
   onMessage: (msg: RoomMessage) => void;
+  /** Fired when an agent is about to call the LLM (before tokens arrive) */
+  onThinking?: (agent: string) => void;
   onStreamToken: (agent: string, token: string) => void;
   onStreamDone: (agent: string) => void;
 }
@@ -129,7 +136,7 @@ export async function stepRoom(
 ): Promise<AgentConfig | null> {
   if (!state.running) return null;
 
-  const { verbose = false, churn = false } = opts;
+  const { verbose = false, churn = false, speaker: forcedSpeaker } = opts;
 
   state.turnCount++;
 
@@ -142,7 +149,7 @@ export async function stepRoom(
     evaluateChurn(state, cb);
   }
 
-  const speaker = pickSpeaker(state);
+  const speaker = forcedSpeaker ?? pickSpeaker(state);
   if (!speaker) return null;
 
   await agentSpeak(state, speaker, cb, verbose);
@@ -267,6 +274,7 @@ async function agentSpeak(
     : state.config.maxTokens;
 
   const name = agent.personality.name;
+  cb.onThinking?.(name);
 
   try {
     const result = await complete(

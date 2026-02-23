@@ -170,6 +170,12 @@ async function main() {
         tui.handle.setActiveAgents([...state.activeAgents]);
       }
     },
+    onThinking: (agent) => {
+      // Show spinner immediately while waiting for the first token
+      if (streamingAgent !== null) tui.handle.streamDone(streamingAgent);
+      streamingAgent = agent;
+      tui.handle.streamStart(agent, agentColorMap.get(agent) ?? "\x1b[37m");
+    },
     onStreamToken: (agent, token) => {
       if (!streamingAgent || streamingAgent !== agent) {
         if (streamingAgent !== null) tui.handle.streamDone(streamingAgent);
@@ -189,6 +195,31 @@ async function main() {
     await transcript.finalize();
     process.exit(0);
   });
+
+  // ── Show recent history in TUI when resuming ──────────────────────
+  if (isResumed && preloadedHistory.length > 0) {
+    const TAIL = 20; // show last N messages
+    const tail = preloadedHistory.slice(-TAIL);
+    if (preloadedHistory.length > TAIL) {
+      tui.handle.pushMessage({
+        timestamp: new Date(),
+        agent: "SYSTEM",
+        content: `... ${preloadedHistory.length - TAIL} earlier messages omitted ...`,
+        color: "\x1b[90m",
+        kind: "system",
+      });
+    }
+    for (const msg of tail) {
+      tui.handle.pushMessage(msg);
+    }
+    tui.handle.pushMessage({
+      timestamp: new Date(),
+      agent: "SYSTEM",
+      content: "─── new session ───",
+      color: "\x1b[90m",
+      kind: "system",
+    });
+  }
 
   // ── Open room (emits topic + join messages) ────────────────────────
   openRoom(state, callbacks);
@@ -232,7 +263,7 @@ async function main() {
 
       if (!state.running || wantsQuit) break;
 
-      await stepRoom(state, callbacks, { verbose: true, churn: false });
+      await stepRoom(state, callbacks, { verbose: true, churn: false, speaker: nextSpeaker ?? undefined });
 
       // Discard stale /next sentinels that queued during streaming;
       // honour mode changes and preserve real text messages.
@@ -262,8 +293,8 @@ async function main() {
   setTimeout(() => process.exit(0), 100);
 }
 
-// ── Peek at who would speak next (mirrors pickSpeaker logic) ────────
-// Used only for the governed-mode announcement; the engine re-picks internally.
+// ── Pick who speaks next (mirrors pickSpeaker logic) ────────────────
+// Used by governed mode to announce AND lock in the next speaker.
 
 function pickNextSpeakerPreview(state: ReturnType<typeof createRoom>) {
   const { activeAgents, lastSpeaker, turnsSinceSpoke } = state;
