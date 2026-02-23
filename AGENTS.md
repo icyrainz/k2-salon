@@ -89,6 +89,8 @@ src/
 - **Type-checking**: Run `just check` or `npx tsc --noEmit`. **Always do this before finishing.**
 - **Running a single test**: Since there's no test framework, test specific modules by adding a temporary script or small inline test function, and execute it using `bun run <file>`. Don't commit temporary scripts.
 - **Formatting**: `npx prettier --write .`
+- **Git commands**: Use plain `git` (not `git -C <path>`) since the working
+  directory is already the repo root. The `-C` flag breaks auto-approval flows.
 
 ## Key patterns
 
