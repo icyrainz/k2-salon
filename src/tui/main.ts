@@ -1,16 +1,6 @@
 import { createInterface } from "readline";
-import { PERSONALITY_PRESETS } from "./agents/roster.js";
-import { loadConfig, resolveRoster } from "./config/loader.js";
-import {
-  createRoom,
-  openRoom,
-  stepRoom,
-  stopRoom,
-  shuffleAgents,
-  injectUserMessage,
-  sleepAbortable,
-  type RoomCallbacks,
-} from "./room/room.js";
+import { PERSONALITY_PRESETS } from "../core/roster.js";
+import { loadConfig, resolveRoster } from "../engine/config.js";
 import {
   loadRoomMeta,
   saveRoomMeta,
@@ -21,9 +11,11 @@ import {
   roomExists,
   createRoomDir,
   TranscriptWriter,
-} from "./room/persist.js";
-import { renderTui } from "./cli/tui.js";
-import type { RoomConfig, RoomMessage } from "./types.js";
+} from "../engine/persist.js";
+import { SalonEngine } from "../engine/salon-engine.js";
+import { renderTui } from "./app.js";
+import { toInkColor } from "./colors.js";
+import type { RoomConfig, RoomMessage } from "../core/types.js";
 
 // ── Pre-TUI prompts ────────────────────────────────────────────────
 
@@ -125,7 +117,7 @@ async function main() {
   if (meta) { meta.lastSession = session; await saveRoomMeta(roomName, meta); }
 
   const config: RoomConfig = { ...salonConfig.room, topic, language };
-  const state = createRoom(config, roster, preloadedHistory, savedRoster);
+  const engine = new SalonEngine(config, roster, preloadedHistory, savedRoster);
 
   await transcript.init(roster.map((a) => a.personality.name));
 
@@ -141,14 +133,14 @@ async function main() {
   const saveActiveRoster = async () => {
     const m = await loadRoomMeta(roomName);
     if (m) {
-      m.activeRoster = state.activeAgents.map(a => a.personality.name);
+      m.activeRoster = [...engine.activeAgents].map(a => a.personality.name);
       await saveRoomMeta(roomName, m);
     }
   };
 
   const handleUserInput = (line: string) => {
     if (line === "\x00WHO") {
-      tui.handle.showWho([...state.activeAgents]);
+      tui.handle.showWho([...engine.activeAgents]);
     } else {
       inputBuffer.push(line);
     }
@@ -156,64 +148,38 @@ async function main() {
 
   const handleQuit = () => {
     wantsQuit = true;
-    stopRoom(state);
+    engine.stop();
   };
 
   // ── Mount TUI ──────────────────────────────────────────────────────
   const tui = renderTui(
+    engine,
     { roomName, session, topic, resumed: isResumed, contextCount: preloadedHistory.length },
     handleUserInput,
     handleQuit,
   );
 
-  const agentColorMap = new Map<string, string>();
-  for (const agent of roster) {
-    agentColorMap.set(agent.personality.name, agent.personality.color);
-  }
-
-  // Streaming state tracked here in the TUI layer
-  let streamingAgent: string | null = null;
-
-  const callbacks: RoomCallbacks = {
-    onMessage: (msg) => {
-      transcript.append(msg);
-      if (msg.kind !== "chat") tui.handle.pushMessage(msg);
-      if (msg.kind === "join" || msg.kind === "leave") {
-        tui.handle.setActiveAgents([...state.activeAgents]);
-        saveActiveRoster(); // persist roster changes from churn/shuffle
-      }
-    },
-    onThinking: (agent) => {
-      // Show spinner immediately while waiting for the first token
-      if (streamingAgent !== null) tui.handle.streamDone(streamingAgent);
-      streamingAgent = agent;
-      tui.handle.streamStart(agent, agentColorMap.get(agent) ?? "\x1b[37m");
-    },
-    onStreamToken: (agent, token) => {
-      if (!streamingAgent || streamingAgent !== agent) {
-        if (streamingAgent !== null) tui.handle.streamDone(streamingAgent);
-        streamingAgent = agent;
-        tui.handle.streamStart(agent, agentColorMap.get(agent) ?? "\x1b[37m");
-      }
-      tui.handle.streamToken(agent, token);
-    },
-    onStreamDone: (agent) => {
-      if (streamingAgent === agent) { tui.handle.streamDone(agent); streamingAgent = null; }
-    },
-  };
+  // Subscribe to engine messages for transcript writing + TUI updates
+  engine.on("message", (msg) => {
+    transcript.append(msg);
+    if (msg.kind !== "chat") tui.handle.pushMessage(msg);
+    if (msg.kind === "join" || msg.kind === "leave") {
+      tui.handle.setActiveAgents([...engine.activeAgents]);
+      saveActiveRoster();
+    }
+  });
 
   process.on("SIGINT", async () => {
-    stopRoom(state);
+    engine.stop();
     wantsQuit = true;
     await transcript.finalize();
     process.exit(0);
   });
 
   // ── Show recent history in TUI when resuming ──────────────────────
-  // Populate mention color map before pushing history so names get highlighted
-  tui.handle.setActiveAgents([...state.activeAgents]);
+  tui.handle.setActiveAgents([...engine.activeAgents]);
   if (isResumed && preloadedHistory.length > 0) {
-    const TAIL = 20; // show last N messages
+    const TAIL = 20;
     const conversationOnly = preloadedHistory.filter(m => m.kind === "chat" || m.kind === "user");
     const tail = conversationOnly.slice(-TAIL);
     if (conversationOnly.length > TAIL) {
@@ -221,14 +187,20 @@ async function main() {
         timestamp: new Date(),
         agent: "SYSTEM",
         content: `... ${conversationOnly.length - TAIL} earlier messages omitted ...`,
-        color: "\x1b[90m",
+        color: "gray",
         kind: "system",
       });
     }
+
+    const agentColorMap = new Map<string, string>();
+    for (const agent of roster) {
+      agentColorMap.set(agent.personality.name, agent.personality.color);
+    }
+
     for (const msg of tail) {
-      // Restore color from roster (markdown transcripts don't store ANSI colors)
+      // Restore color from roster (markdown transcripts don't store colors)
       if (!msg.color && msg.agent && agentColorMap.has(msg.agent)) {
-        msg.color = agentColorMap.get(msg.agent)!;
+        (msg as any).color = agentColorMap.get(msg.agent)!;
       }
       tui.handle.pushMessage(msg);
     }
@@ -236,113 +208,92 @@ async function main() {
       timestamp: new Date(),
       agent: "SYSTEM",
       content: "─── new session ───",
-      color: "\x1b[90m",
+      color: "gray",
       kind: "system",
     });
   }
 
-  // ── Open room (emits topic + join messages) ────────────────────────
-  openRoom(state, callbacks);
-  tui.handle.setActiveAgents([...state.activeAgents]);
+  // ── Open room (emits topic + join messages via engine events) ──────
+  engine.open();
+  tui.handle.setActiveAgents([...engine.activeAgents]);
   await saveActiveRoster();
 
-  // governed is a TUI-only concept: true = step-by-step, false = auto-paced
   let governed = true;
   tui.handle.setGoverned(governed);
 
   // ── Main TUI loop ──────────────────────────────────────────────────
-  // governed wait and free-mode pacing live here — the engine knows nothing
-  // about either. verbose=true in governed (deep responses), churn only in free.
 
-  while (state.running && !wantsQuit) {
-    const nextSpeaker = pickNextSpeakerPreview(state);
+  while (engine.running && !wantsQuit) {
+    const nextSpeaker = engine.peekNextSpeaker();
 
     if (governed) {
-      // Announce who is up and wait for /next (or a user message)
       if (nextSpeaker) {
         const readyMsg: RoomMessage = {
           timestamp: new Date(),
           agent: "SYSTEM",
           content: `[${nextSpeaker.personality.name} is ready — /next to let them speak, or type a reply]`,
-          color: "\x1b[90m",
+          color: "gray",
           kind: "system",
         };
         tui.handle.pushMessage(readyMsg);
       }
 
-      // Wait for /next, /free, /shuffle, user text, or quit
       let advanced = false;
-      while (!advanced && state.running && !wantsQuit) {
-        await sleepAbortable(120, state.abortController.signal);
+      while (!advanced && engine.running && !wantsQuit) {
+        await engine.sleep(120);
         const input = inputBuffer.shift();
         if (input === undefined) continue;
         if (input === "\x00NEXT") { advanced = true; break; }
         if (input === "\x00FREE") { governed = false; tui.handle.setGoverned(false); advanced = true; break; }
-        if (input === "\x00GOVERN") continue; // already governed
+        if (input === "\x00GOVERN") continue;
         if (input === "\x00SHUFFLE") {
-          shuffleAgents(state, callbacks);
-          tui.handle.setActiveAgents([...state.activeAgents]);
-          await saveActiveRoster();
-          break; // re-pick nextSpeaker with new roster
-        }
-        if (input.trim()) { injectUserMessage(state, input, callbacks); advanced = true; }
-      }
-
-      if (!state.running || wantsQuit) break;
-      if (!advanced) continue; // shuffle restarts the governed loop
-
-      await stepRoom(state, callbacks, { verbose: true, churn: false, speaker: nextSpeaker ?? undefined });
-
-      // Discard stale /next sentinels that queued during streaming;
-      // honour mode changes and preserve real text messages.
-      let stale: string | undefined;
-      while ((stale = inputBuffer.shift()) !== undefined) {
-        if (stale === "\x00NEXT") continue; // discard
-        if (stale === "\x00FREE") { governed = false; tui.handle.setGoverned(false); break; }
-        if (stale === "\x00GOVERN") break;
-        if (stale === "\x00SHUFFLE") {
-          shuffleAgents(state, callbacks);
-          tui.handle.setActiveAgents([...state.activeAgents]);
+          engine.shuffle();
+          tui.handle.setActiveAgents([...engine.activeAgents]);
           await saveActiveRoster();
           break;
         }
-        if (stale.trim()) { injectUserMessage(state, stale, callbacks); break; }
+        if (input.trim()) { engine.injectUserMessage(input); advanced = true; }
+      }
+
+      if (!engine.running || wantsQuit) break;
+      if (!advanced) continue;
+
+      await engine.step({ verbose: true, churn: false, speaker: nextSpeaker ?? undefined });
+
+      let stale: string | undefined;
+      while ((stale = inputBuffer.shift()) !== undefined) {
+        if (stale === "\x00NEXT") continue;
+        if (stale === "\x00FREE") { governed = false; tui.handle.setGoverned(false); break; }
+        if (stale === "\x00GOVERN") break;
+        if (stale === "\x00SHUFFLE") {
+          engine.shuffle();
+          tui.handle.setActiveAgents([...engine.activeAgents]);
+          await saveActiveRoster();
+          break;
+        }
+        if (stale.trim()) { engine.injectUserMessage(stale); break; }
       }
     } else {
-      // Free mode: natural pacing, then step with churn enabled
       const jitter = Math.random() * 3000;
-      await sleepAbortable(state.config.turnDelayMs + jitter, state.abortController.signal);
+      await engine.sleep(engine.config.turnDelayMs + jitter);
 
-      if (!state.running || wantsQuit) break;
+      if (!engine.running || wantsQuit) break;
 
       const input = inputBuffer.shift();
       if (input === "\x00GOVERN") { governed = true; tui.handle.setGoverned(true); }
       else if (input === "\x00SHUFFLE") {
-        shuffleAgents(state, callbacks);
-        tui.handle.setActiveAgents([...state.activeAgents]);
+        engine.shuffle();
+        tui.handle.setActiveAgents([...engine.activeAgents]);
         await saveActiveRoster();
       }
-      else if (input?.trim()) injectUserMessage(state, input, callbacks);
+      else if (input?.trim()) engine.injectUserMessage(input);
 
-      await stepRoom(state, callbacks, { verbose: false, churn: true });
+      await engine.step({ verbose: false, churn: true });
     }
   }
 
   await transcript.finalize();
   setTimeout(() => process.exit(0), 100);
-}
-
-// ── Pick who speaks next (mirrors pickSpeaker logic) ────────────────
-// Used by governed mode to announce AND lock in the next speaker.
-
-function pickNextSpeakerPreview(state: ReturnType<typeof createRoom>) {
-  const { activeAgents, lastSpeaker, turnsSinceSpoke } = state;
-  const candidates = activeAgents.filter(a => {
-    const turns = turnsSinceSpoke.get(a.personality.name) ?? 2;
-    return a.personality.name !== lastSpeaker && turns >= 1;
-  });
-  if (candidates.length === 0) return activeAgents.find(a => a.personality.name !== lastSpeaker) ?? null;
-  return candidates[Math.floor(Math.random() * candidates.length)];
 }
 
 main().catch((err) => {

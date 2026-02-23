@@ -2,7 +2,7 @@ import { readFile, writeFile, readdir, mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import { join, basename } from "path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import type { RoomMessage } from "../types.js";
+import type { AgentColor, RoomMessage } from "../core/types.js";
 
 // ── Room directory structure ────────────────────────────────────────
 //
@@ -238,7 +238,7 @@ function parseSessionMarkdown(content: string): RoomMessage[] {
         timestamp: new Date(),
         agent,
         content: content.trim(),
-        color: "",
+        color: "white",
         kind,
       });
       continue;
@@ -254,7 +254,7 @@ function parseSessionMarkdown(content: string): RoomMessage[] {
         timestamp: new Date(),
         agent,
         content: content.trim(),
-        color: "",
+        color: "white",
         kind: agent === "YOU" ? "user" : "chat",
       });
       continue;
@@ -290,7 +290,7 @@ export function parseSeedToMessages(seedContent: string): RoomMessage[] {
           timestamp: new Date(),
           agent: "YOU",
           content: body,
-          color: "\x1b[97m",
+          color: "whiteBright",
           kind: "user",
         });
       }
@@ -306,7 +306,7 @@ export function parseSeedToMessages(seedContent: string): RoomMessage[] {
           timestamp: new Date(),
           agent: "PRIOR",
           content: body,
-          color: "\x1b[90m",
+          color: "gray",
           kind: "chat",
         });
       }
@@ -321,7 +321,7 @@ export function parseSeedToMessages(seedContent: string): RoomMessage[] {
         timestamp: new Date(),
         agent: "SYSTEM",
         content: `Prior discussion: ${headingMatch[1]}`,
-        color: "\x1b[90m",
+        color: "gray",
         kind: "system",
       });
       continue;
@@ -333,7 +333,7 @@ export function parseSeedToMessages(seedContent: string): RoomMessage[] {
         timestamp: new Date(),
         agent: "SYSTEM",
         content: trimmed,
-        color: "\x1b[90m",
+        color: "gray",
         kind: "system",
       });
     }

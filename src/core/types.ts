@@ -1,5 +1,10 @@
 // ── Core types for k2-salon ─────────────────────────────────────────
 
+export type AgentColor =
+  | "black" | "red" | "green" | "yellow" | "blue" | "magenta" | "cyan" | "white"
+  | "gray" | "redBright" | "greenBright" | "yellowBright" | "blueBright"
+  | "magentaBright" | "cyanBright" | "whiteBright";
+
 export type ProviderKind = "openrouter" | "ollama" | "openai-compat";
 
 export interface ChatMessage {
@@ -24,8 +29,8 @@ export interface CompletionResponse {
 export interface Personality {
   /** Display name in the chat room, e.g. "Marx" */
   name: string;
-  /** ANSI color code index (0-7 for standard, 8-15 for bright) */
-  color: string;
+  /** Semantic color identifier for this agent */
+  color: AgentColor;
   /** Short tagline shown on join, e.g. "Marxist philosopher" */
   tagline: string;
   /** Core traits that shape responses */
@@ -66,7 +71,7 @@ export interface RoomMessage {
   timestamp: Date;
   agent: string; // personality name, or "SYSTEM" / "YOU"
   content: string;
-  color: string;
+  color: AgentColor;
   kind: "chat" | "join" | "leave" | "system" | "user";
   /** Provider key + model (set on join messages for display) */
   providerLabel?: string;

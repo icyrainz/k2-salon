@@ -1,4 +1,4 @@
-import type { AgentConfig, ChatMessage, Personality, RoomMessage } from "../types.js";
+import type { AgentConfig, ChatMessage, Personality, RoomMessage } from "./types.js";
 
 // ── Build the system prompt for an agent given their personality ────
 
@@ -74,25 +74,4 @@ export function buildMessages(
   }
 
   return messages;
-}
-
-// ── Should this agent speak this turn? ──────────────────────────────
-
-export function shouldSpeak(
-  agent: AgentConfig,
-  lastSpeaker: string | null,
-  turnsSinceLast: number,
-): boolean {
-  const p = agent.personality;
-
-  // Never speak twice in a row
-  if (lastSpeaker === p.name) return false;
-
-  // Higher chance if haven't spoken in a while
-  const recencyBoost = Math.min(turnsSinceLast * 0.15, 0.4);
-
-  // Base probability from chattiness
-  const prob = p.chattiness + recencyBoost;
-
-  return Math.random() < prob;
 }

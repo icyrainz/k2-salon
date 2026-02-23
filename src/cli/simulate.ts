@@ -10,10 +10,10 @@
  *   --lang LANG    Language agents must use (default: from salon.yaml or "English")
  */
 
-import { PERSONALITY_PRESETS } from "../agents/roster.js";
-import { loadConfig, resolveRoster } from "../config/loader.js";
-import { createRoom, openRoom, stepRoom, type RoomCallbacks } from "../room/room.js";
-import type { RoomConfig, RoomMessage } from "../types.js";
+import { PERSONALITY_PRESETS } from "../core/roster.js";
+import { loadConfig, resolveRoster } from "../engine/config.js";
+import { SalonEngine } from "../engine/salon-engine.js";
+import type { RoomConfig, RoomMessage } from "../core/types.js";
 
 // ── Parse CLI args ──────────────────────────────────────────────────
 
@@ -51,22 +51,18 @@ async function simulate() {
   process.stderr.write(`Target: ${targetMessages} chat messages\n\n`);
 
   const config: RoomConfig = { ...salonConfig.room, topic, language };
-  const state = createRoom(config, roster);
+  const engine = new SalonEngine(config, roster);
 
   const allMessages: RoomMessage[] = [];
   let chatCount = 0;
 
-  const callbacks: RoomCallbacks = {
-    onMessage: (msg) => { allMessages.push(msg); },
-    onStreamToken: () => {},
-    onStreamDone: () => {},
-  };
+  engine.on("message", (msg) => { allMessages.push(msg); });
 
-  openRoom(state, callbacks);
+  engine.open();
 
   // Step until we have enough chat messages — no polling, no wait loop
   while (chatCount < targetMessages) {
-    await stepRoom(state, callbacks, { verbose: true, churn: false });
+    await engine.step({ verbose: true, churn: false });
 
     // Count chat messages collected since last check
     const newCount = allMessages.filter(m => m.kind === "chat").length;

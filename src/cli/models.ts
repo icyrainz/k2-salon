@@ -1,5 +1,5 @@
-import { loadConfig } from "../config/loader.js";
-import { listModels } from "../providers/provider.js";
+import { loadConfig } from "../engine/config.js";
+import { listModels } from "../engine/provider.js";
 
 // ── List available models from all configured providers ─────────────
 

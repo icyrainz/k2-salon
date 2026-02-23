@@ -1,4 +1,4 @@
-import type { AgentConfig } from "../types.js";
+import type { AgentConfig } from "./types.js";
 
 // ── Built-in personality presets (defaults, overridden by salon.yaml)
 // Each combines a personality with a default provider/model.
@@ -8,7 +8,7 @@ export const PERSONALITY_PRESETS: AgentConfig[] = [
   {
     personality: {
       name: "Sage",
-      color: "\x1b[36m", // cyan
+      color: "cyan",
       tagline: "Stoic philosopher and systems thinker",
       traits: ["analytical", "calm", "first-principles thinker", "historically informed"],
       style: [
@@ -26,7 +26,7 @@ export const PERSONALITY_PRESETS: AgentConfig[] = [
   {
     personality: {
       name: "Riko",
-      color: "\x1b[33m", // yellow
+      color: "yellow",
       tagline: "Pragmatic engineer and startup founder",
       traits: ["practical", "impatient with theory", "data-driven", "optimistic"],
       style: [
@@ -44,7 +44,7 @@ export const PERSONALITY_PRESETS: AgentConfig[] = [
   {
     personality: {
       name: "Nova",
-      color: "\x1b[35m", // magenta
+      color: "magenta",
       tagline: "Activist, community organizer, and social critic",
       traits: ["passionate", "empathetic", "critical of power structures", "grassroots-focused"],
       style: [
@@ -62,7 +62,7 @@ export const PERSONALITY_PRESETS: AgentConfig[] = [
   {
     personality: {
       name: "DocK",
-      color: "\x1b[32m", // green
+      color: "green",
       tagline: "Research scientist with dry humor",
       traits: ["methodical", "evidence-based", "skeptical", "quietly witty"],
       style: [
@@ -80,7 +80,7 @@ export const PERSONALITY_PRESETS: AgentConfig[] = [
   {
     personality: {
       name: "Wren",
-      color: "\x1b[34m", // blue
+      color: "blue",
       tagline: "Devil's advocate and contrarian debater",
       traits: ["provocative", "intellectually playful", "argumentative", "sharp-tongued"],
       style: [
@@ -98,7 +98,7 @@ export const PERSONALITY_PRESETS: AgentConfig[] = [
   {
     personality: {
       name: "Jules",
-      color: "\x1b[91m", // bright red
+      color: "redBright",
       tagline: "Retired diplomat, now a podcast host",
       traits: ["diplomatic", "worldly", "bridge-builder", "subtly opinionated"],
       style: [
@@ -116,7 +116,7 @@ export const PERSONALITY_PRESETS: AgentConfig[] = [
   {
     personality: {
       name: "Chip",
-      color: "\x1b[93m", // bright yellow
+      color: "yellowBright",
       tagline: "Jaded GenZ tech worker with meme literacy",
       traits: ["sarcastic", "internet-brained", "surprisingly insightful", "anti-establishment"],
       style: [
@@ -134,7 +134,7 @@ export const PERSONALITY_PRESETS: AgentConfig[] = [
   {
     personality: {
       name: "Ora",
-      color: "\x1b[92m", // bright green
+      color: "greenBright",
       tagline: "Buddhist-leaning mindfulness teacher and ethicist",
       traits: ["serene", "empathetic", "non-judgmental", "deeply ethical"],
       style: [
