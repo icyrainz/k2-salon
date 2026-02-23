@@ -225,11 +225,12 @@ interface InputLineProps {
 }
 
 const COMMANDS = [
-  { cmd: "/next",   hint: "advance discussion" },
-  { cmd: "/who",    hint: "show participants" },
-  { cmd: "/govern", hint: "take control" },
-  { cmd: "/free",   hint: "auto mode" },
-  { cmd: "/quit",   hint: "exit" },
+  { cmd: "/next",    hint: "advance discussion" },
+  { cmd: "/who",     hint: "show participants" },
+  { cmd: "/shuffle", hint: "new random roster" },
+  { cmd: "/govern",  hint: "take control" },
+  { cmd: "/free",    hint: "auto mode" },
+  { cmd: "/quit",    hint: "exit" },
 ] as const;
 
 type InputMode = "command" | "input";
@@ -542,6 +543,11 @@ function App({
 
       if (trimmed === "/free") {
         onUserInput("\x00FREE");
+        return;
+      }
+
+      if (trimmed === "/shuffle") {
+        onUserInput("\x00SHUFFLE");
         return;
       }
 

@@ -56,23 +56,37 @@ export function createRoom(
   config: RoomConfig,
   allAgents: AgentConfig[],
   preloadedHistory?: RoomMessage[],
+  /** Names of agents to place in the active set (from a previous session) */
+  preferredRoster?: string[],
 ): RoomState {
-  const initialCount = Math.min(
-    config.maxAgents,
-    Math.max(config.minAgents, Math.floor(allAgents.length * 0.5)),
-  );
+  let active: AgentConfig[];
+  let benched: AgentConfig[];
 
-  // Priority agents always fill the first slots; rest are shuffled.
-  const priorityAgents = [...allAgents]
-    .filter(a => a.priority !== undefined)
-    .sort((a, b) => a.priority! - b.priority!);
-  const normalAgents = [...allAgents]
-    .filter(a => a.priority === undefined)
-    .sort(() => Math.random() - 0.5);
+  if (preferredRoster && preferredRoster.length > 0) {
+    // Restore previous session's roster; put everyone else on the bench.
+    const nameSet = new Set(preferredRoster);
+    active = preferredRoster
+      .map(n => allAgents.find(a => a.personality.name === n))
+      .filter((a): a is AgentConfig => a !== undefined);
+    benched = allAgents.filter(a => !nameSet.has(a.personality.name));
+  } else {
+    const initialCount = Math.min(
+      config.maxAgents,
+      Math.max(config.minAgents, Math.floor(allAgents.length * 0.5)),
+    );
 
-  const ordered = [...priorityAgents, ...normalAgents];
-  const active = ordered.slice(0, initialCount);
-  const benched = ordered.slice(initialCount);
+    // Priority agents always fill the first slots; rest are shuffled.
+    const priorityAgents = [...allAgents]
+      .filter(a => a.priority !== undefined)
+      .sort((a, b) => a.priority! - b.priority!);
+    const normalAgents = [...allAgents]
+      .filter(a => a.priority === undefined)
+      .sort(() => Math.random() - 0.5);
+
+    const ordered = [...priorityAgents, ...normalAgents];
+    active = ordered.slice(0, initialCount);
+    benched = ordered.slice(initialCount);
+  }
 
   return {
     config,
@@ -155,6 +169,59 @@ export async function stepRoom(
   await agentSpeak(state, speaker, cb, verbose);
 
   return state.running ? speaker : null;
+}
+
+// ── Shuffle: replace active agents with a fresh random selection ────
+
+export function shuffleAgents(state: RoomState, cb: RoomCallbacks): void {
+  // Emit leave messages for current active agents
+  for (const agent of state.activeAgents) {
+    const msg: RoomMessage = {
+      timestamp: new Date(),
+      agent: agent.personality.name,
+      content: randomLeaveExcuse(),
+      color: agent.personality.color,
+      kind: "leave",
+    };
+    state.history.push(msg);
+    cb.onMessage(msg);
+  }
+
+  // Pool everyone back together and re-pick
+  const allAgents = [...state.activeAgents, ...state.benchedAgents];
+  const initialCount = Math.min(
+    state.config.maxAgents,
+    Math.max(state.config.minAgents, Math.floor(allAgents.length * 0.5)),
+  );
+
+  const priorityAgents = [...allAgents]
+    .filter(a => a.priority !== undefined)
+    .sort((a, b) => a.priority! - b.priority!);
+  const normalAgents = [...allAgents]
+    .filter(a => a.priority === undefined)
+    .sort(() => Math.random() - 0.5);
+
+  const ordered = [...priorityAgents, ...normalAgents];
+  state.activeAgents = ordered.slice(0, initialCount);
+  state.benchedAgents = ordered.slice(initialCount);
+  state.lastSpeaker = null;
+  state.turnsSinceSpoke.clear();
+
+  // Emit join messages for new active agents
+  for (const agent of state.activeAgents) {
+    const msg: RoomMessage = {
+      timestamp: new Date(),
+      agent: agent.personality.name,
+      content: `${agent.personality.tagline} — ${randomJoinGreeting()}`,
+      color: agent.personality.color,
+      kind: "join",
+      providerLabel: agent.providerName,
+      modelLabel: agent.model,
+    };
+    state.history.push(msg);
+    cb.onMessage(msg);
+    state.turnsSinceSpoke.set(agent.personality.name, 2);
+  }
 }
 
 // ── Inject a user message into history ─────────────────────────────

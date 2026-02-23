@@ -6,6 +6,7 @@ import {
   openRoom,
   stepRoom,
   stopRoom,
+  shuffleAgents,
   injectUserMessage,
   sleepAbortable,
   type RoomCallbacks,
@@ -57,6 +58,7 @@ async function main() {
   let language: string;
   let preloadedHistory: RoomMessage[] = [];
   let isResumed = false;
+  let savedRoster: string[] | undefined;
 
   if (!arg) {
     process.stdout.write("\x1b[1mk2-salon\x1b[0m — Multi-AI Debate Room\n\n");
@@ -72,6 +74,7 @@ async function main() {
     if (meta) {
       topic = meta.topic;
       language = langFlag ?? meta.language ?? salonConfig.room.language;
+      savedRoster = meta.activeRoster;
       isResumed = true;
       const prevMessages = await loadPreviousSessions(roomName, salonConfig.room.contextWindow);
       preloadedHistory.push(...prevMessages);
@@ -122,7 +125,7 @@ async function main() {
   if (meta) { meta.lastSession = session; await saveRoomMeta(roomName, meta); }
 
   const config: RoomConfig = { ...salonConfig.room, topic, language };
-  const state = createRoom(config, roster, preloadedHistory);
+  const state = createRoom(config, roster, preloadedHistory, savedRoster);
 
   await transcript.init(roster.map((a) => a.personality.name));
 
@@ -133,6 +136,15 @@ async function main() {
   // ── Input buffer: TUI writes here, room loop reads ─────────────────
   const inputBuffer: string[] = [];
   let wantsQuit = false;
+
+  /** Persist the current active roster to room.yaml */
+  const saveActiveRoster = async () => {
+    const m = await loadRoomMeta(roomName);
+    if (m) {
+      m.activeRoster = state.activeAgents.map(a => a.personality.name);
+      await saveRoomMeta(roomName, m);
+    }
+  };
 
   const handleUserInput = (line: string) => {
     if (line === "\x00WHO") {
@@ -168,6 +180,7 @@ async function main() {
       if (msg.kind !== "chat") tui.handle.pushMessage(msg);
       if (msg.kind === "join" || msg.kind === "leave") {
         tui.handle.setActiveAgents([...state.activeAgents]);
+        saveActiveRoster(); // persist roster changes from churn/shuffle
       }
     },
     onThinking: (agent) => {
@@ -224,6 +237,7 @@ async function main() {
   // ── Open room (emits topic + join messages) ────────────────────────
   openRoom(state, callbacks);
   tui.handle.setActiveAgents([...state.activeAgents]);
+  await saveActiveRoster();
 
   // governed is a TUI-only concept: true = step-by-step, false = auto-paced
   let governed = true;
@@ -249,7 +263,7 @@ async function main() {
         tui.handle.pushMessage(readyMsg);
       }
 
-      // Wait for /next, /free, user text, or quit
+      // Wait for /next, /free, /shuffle, user text, or quit
       let advanced = false;
       while (!advanced && state.running && !wantsQuit) {
         await sleepAbortable(120, state.abortController.signal);
@@ -258,10 +272,17 @@ async function main() {
         if (input === "\x00NEXT") { advanced = true; break; }
         if (input === "\x00FREE") { governed = false; tui.handle.setGoverned(false); advanced = true; break; }
         if (input === "\x00GOVERN") continue; // already governed
+        if (input === "\x00SHUFFLE") {
+          shuffleAgents(state, callbacks);
+          tui.handle.setActiveAgents([...state.activeAgents]);
+          await saveActiveRoster();
+          break; // re-pick nextSpeaker with new roster
+        }
         if (input.trim()) { injectUserMessage(state, input, callbacks); advanced = true; }
       }
 
       if (!state.running || wantsQuit) break;
+      if (!advanced) continue; // shuffle restarts the governed loop
 
       await stepRoom(state, callbacks, { verbose: true, churn: false, speaker: nextSpeaker ?? undefined });
 
@@ -272,6 +293,12 @@ async function main() {
         if (stale === "\x00NEXT") continue; // discard
         if (stale === "\x00FREE") { governed = false; tui.handle.setGoverned(false); break; }
         if (stale === "\x00GOVERN") break;
+        if (stale === "\x00SHUFFLE") {
+          shuffleAgents(state, callbacks);
+          tui.handle.setActiveAgents([...state.activeAgents]);
+          await saveActiveRoster();
+          break;
+        }
         if (stale.trim()) { injectUserMessage(state, stale, callbacks); break; }
       }
     } else {
@@ -283,6 +310,11 @@ async function main() {
 
       const input = inputBuffer.shift();
       if (input === "\x00GOVERN") { governed = true; tui.handle.setGoverned(true); }
+      else if (input === "\x00SHUFFLE") {
+        shuffleAgents(state, callbacks);
+        tui.handle.setActiveAgents([...state.activeAgents]);
+        await saveActiveRoster();
+      }
       else if (input?.trim()) injectUserMessage(state, input, callbacks);
 
       await stepRoom(state, callbacks, { verbose: false, churn: true });

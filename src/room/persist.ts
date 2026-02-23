@@ -25,6 +25,8 @@ export interface RoomMeta {
   language?: string;
   created: string;
   lastSession: number;
+  /** Names of agents that were active in the last session (for stable resume) */
+  activeRoster?: string[];
 }
 
 export async function loadRoomMeta(roomName: string): Promise<RoomMeta | null> {
