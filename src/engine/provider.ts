@@ -1,4 +1,4 @@
-import type { CompletionRequest, CompletionResponse, ProviderKind } from "../types.js";
+import type { CompletionRequest, CompletionResponse, ProviderKind } from "../core/types.js";
 
 // ── Unified LLM provider ───────────────────────────────────────────
 

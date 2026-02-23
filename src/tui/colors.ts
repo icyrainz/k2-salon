@@ -1,0 +1,34 @@
+import type { AgentColor } from "../core/types.js";
+
+// ── Semantic AgentColor → ink color ────────────────────────────────
+// AgentColor values are already valid ink color names, so this is an
+// identity mapping. It exists for type-safety and documentation.
+
+export function toInkColor(color: AgentColor): string {
+  return color;
+}
+
+// ── Legacy ANSI → AgentColor (for backward-compatible transcripts) ──
+
+const ANSI_TO_AGENT_COLOR: Record<string, AgentColor> = {
+  "\x1b[30m": "black",
+  "\x1b[31m": "red",
+  "\x1b[32m": "green",
+  "\x1b[33m": "yellow",
+  "\x1b[34m": "blue",
+  "\x1b[35m": "magenta",
+  "\x1b[36m": "cyan",
+  "\x1b[37m": "white",
+  "\x1b[90m": "gray",
+  "\x1b[91m": "redBright",
+  "\x1b[92m": "greenBright",
+  "\x1b[93m": "yellowBright",
+  "\x1b[94m": "blueBright",
+  "\x1b[95m": "magentaBright",
+  "\x1b[96m": "cyanBright",
+  "\x1b[97m": "whiteBright",
+};
+
+export function ansiToAgentColor(ansi: string): AgentColor {
+  return ANSI_TO_AGENT_COLOR[ansi] ?? "white";
+}

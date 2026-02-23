@@ -8,7 +8,7 @@ import type {
   ProviderEntry,
   RosterEntry,
   SalonConfig,
-} from "../types.js";
+} from "../core/types.js";
 
 // ── Default config (used when salon.yaml is absent) ─────────────────
 

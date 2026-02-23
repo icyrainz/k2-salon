@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { render, Box, Text, Static, useApp, useInput } from "ink";
 import TextInput from "ink-text-input";
-import type { AgentConfig, RoomMessage } from "../types.js";
+import type { AgentConfig, AgentColor, RoomMessage } from "../core/types.js";
+import type { SalonEngine } from "../engine/salon-engine.js";
+import { toInkColor } from "./colors.js";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -20,31 +22,6 @@ function Spinner({ active }: { active: boolean }) {
   return <Text color="cyan">{SPINNER_FRAMES[frame]}</Text>;
 }
 
-// ── ANSI color to ink color mapping ─────────────────────────────────
-
-const ANSI_TO_INK: Record<string, string> = {
-  "\x1b[30m": "black",
-  "\x1b[31m": "red",
-  "\x1b[32m": "green",
-  "\x1b[33m": "yellow",
-  "\x1b[34m": "blue",
-  "\x1b[35m": "magenta",
-  "\x1b[36m": "cyan",
-  "\x1b[37m": "white",
-  "\x1b[90m": "gray",
-  "\x1b[91m": "redBright",
-  "\x1b[92m": "greenBright",
-  "\x1b[93m": "yellowBright",
-  "\x1b[94m": "blueBright",
-  "\x1b[95m": "magentaBright",
-  "\x1b[96m": "cyanBright",
-  "\x1b[97m": "whiteBright",
-};
-
-function ansiToInk(ansi: string): string {
-  return ANSI_TO_INK[ansi] ?? "white";
-}
-
 // ── Time formatting ─────────────────────────────────────────────────
 
 function fmtTime(d: Date): string {
@@ -58,7 +35,6 @@ function fmtTime(d: Date): string {
 interface DisplayMessage {
   id: number;
   msg: RoomMessage;
-  /** For streaming messages, the content accumulates here */
   streamContent?: string;
   isStreaming?: boolean;
 }
@@ -95,6 +71,8 @@ function Header({ roomName, session, topic, resumed }: HeaderProps) {
 
 // ── Mention highlighting ────────────────────────────────────────────
 
+let mentionColorMap = new Map<string, string>(); // agent name → ink color
+
 function renderContent(text: string): React.ReactNode {
   if (mentionColorMap.size === 0) return text;
 
@@ -125,7 +103,7 @@ function renderContent(text: string): React.ReactNode {
 function ChatMessage({ dm }: { dm: DisplayMessage }) {
   const { msg, streamContent, isStreaming } = dm;
   const time = fmtTime(msg.timestamp);
-  const inkColor = ansiToInk(msg.color);
+  const inkColor = toInkColor(msg.color);
 
   switch (msg.kind) {
     case "join": {
@@ -197,7 +175,6 @@ function ChatMessage({ dm }: { dm: DisplayMessage }) {
 // ── Who table (local-only display) ──────────────────────────────────
 
 function WhoTable({ agents }: { agents: AgentConfig[] }) {
-  // Find max widths for alignment
   const nameWidth = Math.max(...agents.map(a => a.personality.name.length), 4);
   const provWidth = Math.max(
     ...agents.map(a => {
@@ -216,7 +193,7 @@ function WhoTable({ agents }: { agents: AgentConfig[] }) {
         return (
           <Box key={a.personality.name}>
             <Text>  </Text>
-            <Text bold color={ansiToInk(a.personality.color)}>
+            <Text bold color={toInkColor(a.personality.color)}>
               {a.personality.name.padEnd(nameWidth + 2)}
             </Text>
             <Text dimColor>{provModel.padEnd(provWidth + 2)}</Text>
@@ -231,14 +208,14 @@ function WhoTable({ agents }: { agents: AgentConfig[] }) {
 
 // ── Status bar ──────────────────────────────────────────────────────
 
-function StatusBar({ agents }: { agents: { name: string; color: string }[] }) {
+function StatusBar({ agents }: { agents: { name: string; color: AgentColor }[] }) {
   return (
     <Box>
       <Text dimColor>  In room: </Text>
       {agents.map((a, i) => (
         <React.Fragment key={a.name}>
           {i > 0 && <Text dimColor>, </Text>}
-          <Text color={ansiToInk(a.color)}>{a.name}</Text>
+          <Text color={toInkColor(a.color)}>{a.name}</Text>
         </React.Fragment>
       ))}
     </Box>
@@ -344,38 +321,27 @@ export interface TuiProps {
 }
 
 export interface TuiHandle {
-  /** Push a completed message to the chat */
   pushMessage: (msg: RoomMessage) => void;
-  /** Start streaming for an agent (creates a placeholder message) */
-  streamStart: (agent: string, color: string) => void;
-  /** Append a token to the currently streaming message */
-  streamToken: (agent: string, token: string) => void;
-  /** Finalize the streaming message */
-  streamDone: (agent: string) => void;
-  /** Update the active agents list */
-  setActiveAgents: (agents: AgentConfig[]) => void;
-  /** Show /who table */
-  showWho: (agents: AgentConfig[]) => void;
-  /** Update governed mode indicator */
+  setActiveAgents: (agents: readonly AgentConfig[]) => void;
+  showWho: (agents: readonly AgentConfig[]) => void;
   setGoverned: (governed: boolean) => void;
 }
 
-// We use a module-level event emitter pattern to communicate
-// between the room engine (running async) and the React tree.
+// ── Engine events bridge ────────────────────────────────────────────
+// The engine runs async alongside the React tree. We bridge via a
+// module-level event queue that React drains on each flush.
 
 type TuiEvent =
   | { type: "message"; msg: RoomMessage }
-  | { type: "streamStart"; agent: string; color: string }
+  | { type: "streamStart"; agent: string; color: AgentColor }
   | { type: "streamToken"; agent: string; token: string }
   | { type: "streamDone"; agent: string }
-  | { type: "setActiveAgents"; agents: AgentConfig[] }
-  | { type: "showWho"; agents: AgentConfig[] }
+  | { type: "setActiveAgents"; agents: readonly AgentConfig[] }
+  | { type: "showWho"; agents: readonly AgentConfig[] }
   | { type: "setGoverned"; governed: boolean };
 
 let eventQueue: TuiEvent[] = [];
 let eventFlush: (() => void) | null = null;
-
-const mentionColorMap = new Map<string, string>(); // agent name → ink color
 
 function emitTuiEvent(event: TuiEvent): void {
   eventQueue.push(event);
@@ -383,6 +349,7 @@ function emitTuiEvent(event: TuiEvent): void {
 }
 
 function App({
+  engine,
   roomName,
   session,
   topic,
@@ -390,29 +357,76 @@ function App({
   contextCount,
   onUserInput,
   onQuit,
-}: TuiProps & { onUserInput: (line: string) => void; onQuit: () => void }) {
+}: TuiProps & {
+  engine: SalonEngine;
+  onUserInput: (line: string) => void;
+  onQuit: () => void;
+}) {
   const { exit } = useApp();
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
-  const [activeAgents, setActiveAgents] = useState<AgentConfig[]>([]);
-  const [whoDisplay, setWhoDisplay] = useState<AgentConfig[] | null>(null);
-  const [governed, setGoverned] = useState(true); // default governed
+  const [activeAgents, setActiveAgents] = useState<readonly AgentConfig[]>([]);
+  const [whoDisplay, setWhoDisplay] = useState<readonly AgentConfig[] | null>(null);
+  const [governed, setGoverned] = useState(true);
   const [agentActivity, setAgentActivity] = useState<{
     agent: string;
-    color: string;
+    color: AgentColor;
     phase: "thinking" | "responding";
   } | null>(null);
   const nextId = useRef(0);
   const streamingRef = useRef<{
     agent: string;
-    color: string;
+    color: AgentColor;
     id: number;
     buffer: string;
   } | null>(null);
   const flushTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Subscribe to engine events
+  useEffect(() => {
+    const onThinking = (agent: string) => {
+      // Finalize any previous stream
+      const sr = streamingRef.current;
+      if (sr !== null) {
+        emitTuiEvent({ type: "streamDone", agent: sr.agent });
+      }
+      // Find the agent's color from the engine
+      const agentConfig = engine.activeAgents.find(a => a.personality.name === agent);
+      const color: AgentColor = agentConfig?.personality.color ?? "white";
+      emitTuiEvent({ type: "streamStart", agent, color });
+    };
 
+    const onStreamToken = (agent: string, token: string) => {
+      const sr = streamingRef.current;
+      if (!sr || sr.agent !== agent) {
+        // Late start — create stream entry
+        if (sr !== null) {
+          emitTuiEvent({ type: "streamDone", agent: sr.agent });
+        }
+        const agentConfig = engine.activeAgents.find(a => a.personality.name === agent);
+        const color: AgentColor = agentConfig?.personality.color ?? "white";
+        emitTuiEvent({ type: "streamStart", agent, color });
+      }
+      emitTuiEvent({ type: "streamToken", agent, token });
+    };
 
-  // Process events from the room engine
+    const onStreamDone = (agent: string) => {
+      if (streamingRef.current?.agent === agent) {
+        emitTuiEvent({ type: "streamDone", agent });
+      }
+    };
+
+    engine.on("thinking", onThinking);
+    engine.on("streamToken", onStreamToken);
+    engine.on("streamDone", onStreamDone);
+
+    return () => {
+      engine.off("thinking", onThinking);
+      engine.off("streamToken", onStreamToken);
+      engine.off("streamDone", onStreamDone);
+    };
+  }, [engine]);
+
+  // Process events from the bridge
   useEffect(() => {
     const processEvents = () => {
       const events = eventQueue.splice(0);
@@ -421,14 +435,11 @@ function App({
       for (const event of events) {
         switch (event.type) {
           case "message": {
-            // If this is a chat message that matches the current streaming agent,
-            // the stream is done — finalize the streaming message
             if (
               event.msg.kind === "chat" &&
               streamingRef.current &&
               streamingRef.current.agent === event.msg.agent
             ) {
-              // Already handled by streamDone, just skip the duplicate push
               break;
             }
 
@@ -464,7 +475,6 @@ function App({
             const sr = streamingRef.current;
             if (sr && sr.agent === event.agent) {
               if (sr.buffer.length === 0) {
-                // First token: transition from thinking → responding
                 setAgentActivity((prev) =>
                   prev && prev.agent === event.agent
                     ? { ...prev, phase: "responding" }
@@ -501,15 +511,14 @@ function App({
 
           case "setActiveAgents":
             setActiveAgents(event.agents);
-            mentionColorMap.clear();
+            mentionColorMap = new Map<string, string>();
             for (const a of event.agents) {
-              mentionColorMap.set(a.personality.name, ansiToInk(a.personality.color));
+              mentionColorMap.set(a.personality.name, toInkColor(a.personality.color));
             }
             break;
 
           case "showWho":
             setWhoDisplay(event.agents);
-            // Auto-clear after 8 seconds
             setTimeout(() => setWhoDisplay(null), 8000);
             break;
 
@@ -521,10 +530,7 @@ function App({
     };
 
     eventFlush = processEvents;
-
-    return () => {
-      eventFlush = null;
-    };
+    return () => { eventFlush = null; };
   }, []);
 
   // Periodic flush of streaming buffer to UI (every 50ms)
@@ -589,14 +595,11 @@ function App({
     [onUserInput, onQuit, exit],
   );
 
-  // Split: settled messages go into <Static>, the live streaming message
-  // stays outside so it can update without re-rendering static history.
   const streamingDm = messages.find((dm) => dm.isStreaming);
   const settledMessages = messages.filter((dm) => !dm.isStreaming);
 
   return (
     <Box flexDirection="column">
-      {/* Header — rendered once via Static so it doesn't scroll away */}
       <Static items={[{ id: "header", roomName, session, topic, resumed, contextCount }]}>
         {(item) => (
           <Box key={item.id} flexDirection="column">
@@ -615,23 +618,18 @@ function App({
         )}
       </Static>
 
-      {/* Settled chat history — Static means ink never re-renders these,
-          they scroll up naturally as new ones appear */}
       <Static items={settledMessages}>
         {(dm) => <ChatMessage key={dm.id} dm={dm} />}
       </Static>
 
-      {/* Live streaming message — outside Static so it updates */}
       {streamingDm && <ChatMessage dm={streamingDm} />}
 
-      {/* Who table (shown when /who is active) */}
-      {whoDisplay && <WhoTable agents={whoDisplay} />}
+      {whoDisplay && <WhoTable agents={[...whoDisplay]} />}
 
-      {/* Status bar + mode indicator */}
       <Box>
         {activeAgents.length > 0 && (
           <StatusBar
-            agents={activeAgents.map((a) => ({
+            agents={[...activeAgents].map((a) => ({
               name: a.personality.name,
               color: a.personality.color,
             }))}
@@ -644,23 +642,20 @@ function App({
         }
       </Box>
 
-      {/* Agent activity indicator */}
       {agentActivity && (
         <Box>
           <Text>  </Text>
           <Spinner active={true} />
           <Text> </Text>
-          <Text bold color={ansiToInk(agentActivity.color)}>{agentActivity.agent}</Text>
+          <Text bold color={toInkColor(agentActivity.color)}>{agentActivity.agent}</Text>
           <Text dimColor>
             {agentActivity.phase === "thinking" ? " thinking..." : " responding..."}
           </Text>
         </Box>
       )}
 
-      {/* Separator */}
       <Text dimColor>{"─".repeat(60)}</Text>
 
-      {/* Input line — always at the bottom, never pushed away */}
       <InputLine onSubmit={handleSubmit} />
     </Box>
   );
@@ -674,21 +669,17 @@ export interface TuiInstance {
 }
 
 export function renderTui(
+  engine: SalonEngine,
   props: TuiProps,
   onUserInput: (line: string) => void,
   onQuit: () => void,
 ): TuiInstance {
   const instance = render(
-    <App {...props} onUserInput={onUserInput} onQuit={onQuit} />,
+    <App engine={engine} {...props} onUserInput={onUserInput} onQuit={onQuit} />,
   );
 
   const handle: TuiHandle = {
     pushMessage: (msg) => emitTuiEvent({ type: "message", msg }),
-    streamStart: (agent, color) =>
-      emitTuiEvent({ type: "streamStart", agent, color }),
-    streamToken: (agent, token) =>
-      emitTuiEvent({ type: "streamToken", agent, token }),
-    streamDone: (agent) => emitTuiEvent({ type: "streamDone", agent }),
     setActiveAgents: (agents) =>
       emitTuiEvent({ type: "setActiveAgents", agents }),
     showWho: (agents) => emitTuiEvent({ type: "showWho", agents }),

@@ -36,21 +36,21 @@ interface PersonasFile {
   personas: PersonaEntry[];
 }
 
-// ── ANSI color cycle for auto-assignment ─────────────────────────────
-// Colors in personas.yaml may be human-readable names or raw escape codes.
-// We map names → escape codes so salon.yaml never contains raw ESC bytes.
+// ── Semantic color cycle for auto-assignment ─────────────────────────
+// Colors use semantic AgentColor names (ink-compatible).
 
 const COLOR_NAME_MAP: Record<string, string> = {
-  cyan:           "\x1b[36m",
-  yellow:         "\x1b[33m",
-  magenta:        "\x1b[35m",
-  green:          "\x1b[32m",
-  blue:           "\x1b[34m",
-  "bright-red":   "\x1b[91m",
-  "bright-yellow":"\x1b[93m",
-  "bright-green": "\x1b[92m",
-  "bright-cyan":  "\x1b[96m",
-  "bright-magenta":"\x1b[95m",
+  cyan:             "cyan",
+  yellow:           "yellow",
+  magenta:          "magenta",
+  green:            "green",
+  blue:             "blue",
+  red:              "red",
+  "bright-red":     "redBright",
+  "bright-yellow":  "yellowBright",
+  "bright-green":   "greenBright",
+  "bright-cyan":    "cyanBright",
+  "bright-magenta": "magentaBright",
 };
 
 // Fallback cycle used when no color is specified
@@ -58,11 +58,12 @@ const COLOR_CYCLE = Object.values(COLOR_NAME_MAP);
 
 function resolveColor(raw: string | undefined, index: number): string {
   if (!raw) return COLOR_CYCLE[index % COLOR_CYCLE.length];
-  // Already a raw escape code
-  if (raw.includes("\x1b") || raw.includes("\u001b") || raw.includes("\\e")) {
-    return raw.replace(/\\e/g, "\x1b");
-  }
-  return COLOR_NAME_MAP[raw.toLowerCase()] ?? COLOR_CYCLE[index % COLOR_CYCLE.length];
+  // Already a semantic name (no escape codes)
+  const mapped = COLOR_NAME_MAP[raw.toLowerCase()];
+  if (mapped) return mapped;
+  // If it's already a valid semantic name, use it directly
+  if (COLOR_CYCLE.includes(raw)) return raw;
+  return COLOR_CYCLE[index % COLOR_CYCLE.length];
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────

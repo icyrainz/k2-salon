@@ -9,11 +9,11 @@ default:
 
 # Start or resume a room (creates new if doesn't exist)
 room name:
-    bun run src/main.ts {{name}}
+    bun run src/tui/main.ts {{name}}
 
 # Start interactively (prompts for room name)
 start:
-    bun run src/main.ts
+    bun run src/tui/main.ts
 
 # List all rooms and their status
 rooms:

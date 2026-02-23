@@ -4,8 +4,8 @@
   "description": "Multi-AI debate room — different LLM personalities discuss topics in real-time IRC style",
   "type": "module",
   "scripts": {
-    "start": "bun run src/main.ts",
-    "dev": "bun --watch run src/main.ts",
+    "start": "bun run src/tui/main.ts",
+    "dev": "bun --watch run src/tui/main.ts",
     "models": "bun run src/cli/models.ts"
   },
   "dependencies": {
