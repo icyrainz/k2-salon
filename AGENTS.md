@@ -5,7 +5,7 @@ This file helps AI coding agents pick up context quickly when resuming work.
 ## Project documentation structure
 
 - **BRAINSTORM.md** -- Ideas, requirements, design decisions, rationale.
-  Read this to understand *why* things are built the way they are.
+  Read this to understand _why_ things are built the way they are.
 - **TODO.md** -- Pending work only. Completed tasks are removed.
   Each item has problem, solution, and files-to-change sections.
 - **AGENTS.md** -- (this file) Project navigation, code style, architecture,
@@ -77,11 +77,18 @@ src/
 - **Error handling**: Throw descriptive `Error` with context. Provider
   errors include status code and response body. The room engine catches
   agent errors and emits them as system messages (no crashes).
+- **Formatting**: The project uses Prettier. If you edit files, ensure the formatting matches the existing codebase (2 spaces, double quotes).
 - **ANSI colors**: Stored as escape codes in `Personality.color` (e.g.
   `"\x1b[36m"`). Converted to ink color names via `ansiToInk()` in tui.tsx.
 - **Config values**: Always have defaults in `DEFAULT_CONFIG` in loader.ts.
   salon.yaml overrides are merged on top.
-- **No external test framework** currently. Type-check with `npx tsc --noEmit`.
+
+## Testing & Linting
+
+- **Test Framework**: No external test framework currently (no Jest/Vitest).
+- **Type-checking**: Run `just check` or `npx tsc --noEmit`. **Always do this before finishing.**
+- **Running a single test**: Since there's no test framework, test specific modules by adding a temporary script or small inline test function, and execute it using `bun run <file>`. Don't commit temporary scripts.
+- **Formatting**: `npx prettier --write .`
 
 ## Key patterns
 
@@ -107,18 +114,21 @@ src/
 ## How to do common tasks
 
 ### Add a new provider kind
+
 1. Add the kind to `ProviderKind` union in `types.ts`
 2. Add a `completeXxx()` function in `providers/provider.ts`
 3. Add the case to `complete()` and `listModels()` switch statements
 4. Document in README.md
 
 ### Add a new personality preset
+
 1. Add an entry to `PERSONALITY_PRESETS` in `agents/roster.ts`
 2. Pick a unique ANSI color, name, traits, style, bias, chattiness,
    contrarianism
 3. Optionally add to default roster in `salon.yaml`
 
 ### Add a new room command (e.g. /something)
+
 1. Handle it in `handleSubmit` in `tui.tsx` -- intercept before sending
    to `onUserInput`
 2. For display-only commands (like /who), emit via `tui.handle`
@@ -126,6 +136,7 @@ src/
    input buffer and handle in `pollUserInput` in main.ts
 
 ### Add a new message kind
+
 1. Add to the `kind` union in `RoomMessage` in `types.ts`
 2. Add rendering case in `ChatMessage` component in `tui.tsx`
 3. Add formatting case in `formatMessageToMarkdown` in `persist.ts`
@@ -133,6 +144,7 @@ src/
 5. Handle in `buildMessages` in `personality.ts` (how agents see it)
 
 ### Add a new config field
+
 1. Add to the relevant interface in `types.ts`
 2. Add default in `DEFAULT_CONFIG` in `loader.ts`
 3. Add to `salon.yaml` with a comment
@@ -140,16 +152,16 @@ src/
 
 ## Current roster
 
-| Agent | Provider | Model | Personality |
-|-------|----------|-------|-------------|
-| Sage | zen | claude-sonnet-4-6 | Stoic philosopher |
-| Wren | openrouter | google/gemini-3.1-pro-preview | Devil's advocate |
-| Jules | ollama | qwen3:8b | Retired diplomat (local) |
-| Chip | zen | glm-5-free | Jaded GenZ tech worker (free) |
-| Sage | zen | claude-sonnet-4-6 | Stoic philosopher |
-| Wren | openrouter | google/gemini-3.1-pro-preview | Devil's advocate |
-| Riko | moonshot | kimi-k2.5 | Startup founder |
-| DocK | fractal | gpt-oss-20b | Research scientist |
+| Agent | Provider   | Model                         | Personality                   |
+| ----- | ---------- | ----------------------------- | ----------------------------- |
+| Sage  | zen        | claude-sonnet-4-6             | Stoic philosopher             |
+| Wren  | openrouter | google/gemini-3.1-pro-preview | Devil's advocate              |
+| Jules | ollama     | qwen3:8b                      | Retired diplomat (local)      |
+| Chip  | zen        | glm-5-free                    | Jaded GenZ tech worker (free) |
+| Sage  | zen        | claude-sonnet-4-6             | Stoic philosopher             |
+| Wren  | openrouter | google/gemini-3.1-pro-preview | Devil's advocate              |
+| Riko  | moonshot   | kimi-k2.5                     | Startup founder               |
+| DocK  | fractal    | gpt-oss-20b                   | Research scientist            |
 
 ## Pending work
 

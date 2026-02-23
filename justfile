@@ -62,6 +62,14 @@ salon-podcast topic *args:
     echo "Report saved to $report"
     env -u OPENAI_API_KEY bun run src/cli/podcast.ts "$report" --out "reports/${slug}.mp3"
 
+# ── Persona management ───────────────────────────────────────────────
+
+# Shuffle personas: pick a random subset from personas.yaml and write into salon.yaml
+# Usage: just shuffle          (picks 6)
+#        just shuffle 4        (picks 4)
+shuffle count="6":
+    bun run src/cli/shuffle-personas.ts --count {{count}}
+
 # ── Setup ────────────────────────────────────────────────────────────
 
 # Install dependencies
