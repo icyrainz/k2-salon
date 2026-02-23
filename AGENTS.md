@@ -168,6 +168,12 @@ src/
 See TODO.md. Current item: rolling conversation summary system to prevent
 context loss in long sessions.
 
+## README maintenance
+
+**Always check and update README.md on every commit.** If your changes add
+commands, config options, visible behaviour, or change the project structure,
+update the relevant README sections before committing.
+
 ## Common commands
 
 ```bash

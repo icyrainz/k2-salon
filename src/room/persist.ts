@@ -117,6 +117,7 @@ export async function loadPreviousSessions(
 export class TranscriptWriter {
   private filePath: string;
   private initialized = false;
+  private participants: string[] = [];
 
   constructor(roomName: string, session: number, topic: string) {
     this.filePath = sessionPath(roomName, session);
@@ -128,19 +129,26 @@ export class TranscriptWriter {
   private session: number;
 
   async init(participants: string[]): Promise<void> {
+    // Defer file creation until the first message is appended
+    this.participants = participants;
+    this.initialized = true;
+  }
+
+  private async ensureFile(): Promise<void> {
+    if (existsSync(this.filePath)) return;
+
     const frontmatter = [
       "---",
       `topic: "${this.topic}"`,
       `session: ${this.session}`,
       `started: ${new Date().toISOString()}`,
-      `participants: [${participants.join(", ")}]`,
+      `participants: [${this.participants.join(", ")}]`,
       "---",
       "",
       "",
     ].join("\n");
 
     await writeFile(this.filePath, frontmatter);
-    this.initialized = true;
   }
 
   async append(msg: RoomMessage): Promise<void> {
@@ -149,11 +157,12 @@ export class TranscriptWriter {
     const line = formatMessageToMarkdown(msg);
     if (!line) return;
 
+    await this.ensureFile();
     await writeFile(this.filePath, line, { flag: "a" });
   }
 
   async finalize(): Promise<void> {
-    if (!this.initialized) return;
+    if (!this.initialized || !existsSync(this.filePath)) return;
 
     // Read the file, update the frontmatter with ended timestamp
     const content = await readFile(this.filePath, "utf-8");

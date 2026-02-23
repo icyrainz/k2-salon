@@ -93,6 +93,33 @@ function Header({ roomName, session, topic, resumed }: HeaderProps) {
   );
 }
 
+// ── Mention highlighting ────────────────────────────────────────────
+
+function renderContent(text: string): React.ReactNode {
+  if (mentionColorMap.size === 0) return text;
+
+  const names = [...mentionColorMap.keys()].sort((a, b) => b.length - a.length);
+  const pattern = new RegExp(
+    `\\b(${names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\b`,
+    "g",
+  );
+
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  for (const match of text.matchAll(pattern)) {
+    if (match.index! > lastIndex) parts.push(text.slice(lastIndex, match.index));
+    const name = match[1];
+    parts.push(
+      <Text key={match.index} bold color={mentionColorMap.get(name)}>
+        {name}
+      </Text>,
+    );
+    lastIndex = match.index! + match[0].length;
+  }
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+  return parts.length > 0 ? <>{parts}</> : text;
+}
+
 // ── Message rendering ───────────────────────────────────────────────
 
 function ChatMessage({ dm }: { dm: DisplayMessage }) {
@@ -142,7 +169,7 @@ function ChatMessage({ dm }: { dm: DisplayMessage }) {
             <Text bold color="whiteBright">{"<YOU>"}</Text>
           </Box>
           <Box marginLeft={6}>
-            <Text>{msg.content}</Text>
+            <Text>{renderContent(msg.content)}</Text>
           </Box>
         </Box>
       );
@@ -156,7 +183,7 @@ function ChatMessage({ dm }: { dm: DisplayMessage }) {
             <Text bold color={inkColor}>{"<"}{msg.agent}{">"}</Text>
           </Box>
           <Box marginLeft={6}>
-            <Text>{content}</Text>
+            <Text>{renderContent(content)}</Text>
           </Box>
         </Box>
       );
@@ -348,6 +375,8 @@ type TuiEvent =
 let eventQueue: TuiEvent[] = [];
 let eventFlush: (() => void) | null = null;
 
+const mentionColorMap = new Map<string, string>(); // agent name → ink color
+
 function emitTuiEvent(event: TuiEvent): void {
   eventQueue.push(event);
   eventFlush?.();
@@ -472,6 +501,10 @@ function App({
 
           case "setActiveAgents":
             setActiveAgents(event.agents);
+            mentionColorMap.clear();
+            for (const a of event.agents) {
+              mentionColorMap.set(a.personality.name, ansiToInk(a.personality.color));
+            }
             break;
 
           case "showWho":

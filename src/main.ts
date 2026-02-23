@@ -210,19 +210,26 @@ async function main() {
   });
 
   // ── Show recent history in TUI when resuming ──────────────────────
+  // Populate mention color map before pushing history so names get highlighted
+  tui.handle.setActiveAgents([...state.activeAgents]);
   if (isResumed && preloadedHistory.length > 0) {
     const TAIL = 20; // show last N messages
-    const tail = preloadedHistory.slice(-TAIL);
-    if (preloadedHistory.length > TAIL) {
+    const conversationOnly = preloadedHistory.filter(m => m.kind === "chat" || m.kind === "user");
+    const tail = conversationOnly.slice(-TAIL);
+    if (conversationOnly.length > TAIL) {
       tui.handle.pushMessage({
         timestamp: new Date(),
         agent: "SYSTEM",
-        content: `... ${preloadedHistory.length - TAIL} earlier messages omitted ...`,
+        content: `... ${conversationOnly.length - TAIL} earlier messages omitted ...`,
         color: "\x1b[90m",
         kind: "system",
       });
     }
     for (const msg of tail) {
+      // Restore color from roster (markdown transcripts don't store ANSI colors)
+      if (!msg.color && msg.agent && agentColorMap.has(msg.agent)) {
+        msg.color = agentColorMap.get(msg.agent)!;
+      }
       tui.handle.pushMessage(msg);
     }
     tui.handle.pushMessage({

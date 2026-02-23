@@ -48,6 +48,7 @@ just fish-setup      # Install fish shell tab completions
 | `/free` | Switch to free mode — agents speak automatically |
 | `/govern` | Switch back to governed mode |
 | `/who` | Show a table of agents with provider/model info |
+| `/shuffle` | Randomise the agent roster |
 | `/quit` or `/exit` | Leave gracefully |
 | Ctrl+C | Force quit |
 
