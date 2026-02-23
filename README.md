@@ -128,7 +128,7 @@ The `reports/` directory is gitignored.
 
 ### How simulation works
 
-The engine is purely step-based — `stepRoom()` runs exactly one agent turn and returns. The simulation loop calls it until enough chat messages are collected, with no polling, no wait loop, and no UI input required.
+The engine is purely step-based — `engine.step()` runs exactly one agent turn and returns. The simulation loop calls it until enough chat messages are collected, with no polling, no wait loop, and no UI input required.
 
 Each step uses `verbose: true` so agents write full paragraphs suitable for a report rather than short chat-style messages.
 
@@ -253,65 +253,73 @@ OPENAI_API_KEY=...        # Required for podcast TTS
 
 ## Project structure
 
+The codebase follows a strict three-layer architecture: **Core ← Engine ← Interface**.
+
 ```
 src/
-  main.ts              Entry point — room setup, stdin handoff, TUI loop
-  types.ts             Shared types (AgentConfig, RoomMessage, RoomConfig…)
-  providers/
-    provider.ts        Unified LLM client (openrouter, openai-compat, ollama)
-  agents/
-    personality.ts     System prompt builder, shouldSpeak() turn logic
+  core/                Pure functions — no I/O, no side effects
+    types.ts           Shared types (AgentColor, Personality, AgentConfig, RoomMessage…)
     roster.ts          8 built-in personality presets, join/leave excuses
-  config/
-    loader.ts          YAML config loader, ${ENV_VAR} resolution, roster resolver
-  room/
-    room.ts            Step-based engine: createRoom, openRoom, stepRoom,
-                       injectUserMessage, stopRoom
+    personality.ts     System prompt builder, LLM message formatter
+    speaker.ts         shouldSpeak(), getSpeakerCandidates() — pure probability logic
+    churn.ts           evaluateChurn() → ChurnDecision (who should join/leave)
+  engine/              Stateful orchestration, EventEmitter
+    salon-engine.ts    SalonEngine class — owns room state, drives agent turns
+    provider.ts        Unified LLM client (openrouter, openai-compat, ollama)
+    config.ts          YAML config loader, ${ENV_VAR} resolution, roster resolver
     persist.ts         Transcript writer, session loader, seed parser
-  cli/
-    tui.tsx            Ink TUI — chat pane, streaming, input, status bar
-    simulate.ts        Headless simulation — calls stepRoom in a loop, no UI
+  tui/                 Terminal UI (Ink/React)
+    main.ts            Entry point — room setup, governed/free mode loop
+    app.tsx            React component tree — chat pane, streaming, input, status bar
+    colors.ts          AgentColor → ink color mapping
+  cli/                 Other CLI entry points
+    simulate.ts        Headless simulation — calls engine.step() in a loop, no UI
     podcast.ts         OpenAI TTS per turn, parallel synthesis, ffmpeg concat
     models.ts          `just models` command
+    shuffle-personas.ts  Pick random personas from personas.yaml into salon.yaml
 completions/
   k2-salon.fish        Fish shell completions + salon alias
 reports/               Generated simulation transcripts + podcast MP3s (gitignored)
 rooms/                 Room data — topics, transcripts, seed material (gitignored)
 salon.yaml             Provider + roster config
+personas.yaml          Persona pool for /shuffle
 justfile               Task runner recipes
 ```
 
 ## How it works
 
-### Room engine
+### SalonEngine
 
-The engine (`room.ts`) is decoupled from any UI. It exposes a simple step-based API:
+The engine (`salon-engine.ts`) extends `TypedEmitter` and is fully decoupled from any UI. It exposes a step-based API:
 
 ```ts
-const state = createRoom(config, roster);
-openRoom(state, callbacks);          // emits topic + join messages
+const engine = new SalonEngine(config, roster, history);
+engine.open();          // emits topic + join messages
 
 // Caller drives the loop
 while (collecting) {
-  await stepRoom(state, callbacks, { verbose: true, churn: false });
+  await engine.step({ verbose: true, churn: false });
 }
 ```
 
-`stepRoom` runs exactly one agent turn — picks a speaker, calls the LLM, emits the response via callbacks — and returns. No polling, no wait loops inside the engine.
+`engine.step()` runs exactly one agent turn — picks a speaker, calls the LLM, emits the response via events — and returns. No polling, no wait loops inside the engine.
+
+**Events:** `message`, `thinking`, `streamToken`, `streamDone`
 
 **`StepOptions`:**
 - `verbose` — agents write long paragraphs (governed mode / simulation) vs short chat messages (free mode)
 - `churn` — evaluate agent join/leave on this step (free mode only; disabled in simulation for a stable cast)
+- `speaker` — force a specific agent to speak (used in governed mode after `/next`)
 
-### TUI loop (main.ts)
+### TUI loop (tui/main.ts)
 
-The TUI owns the governed wait loop and free-mode pacing. Governed mode polls an input buffer every 120ms waiting for `/next`; free mode sleeps `turnDelayMs + jitter` between steps. Both pass appropriate `StepOptions` to `stepRoom`. The engine knows nothing about either mode.
+The TUI owns the governed wait loop and free-mode pacing. Governed mode polls an input buffer every 120ms waiting for `/next`; free mode sleeps `turnDelayMs + jitter` between steps. Both pass appropriate `StepOptions` to `engine.step()`. The engine knows nothing about either mode.
 
-### Simulation loop (simulate.ts)
+### Simulation loop (cli/simulate.ts)
 
-A plain `while` loop with no delays, no UI input, no mode flags — just calls `stepRoom({ verbose: true })` until enough chat messages are collected.
+A plain `while` loop with no delays, no UI input, no mode flags — just calls `engine.step({ verbose: true })` until enough chat messages are collected.
 
-### Podcast pipeline (podcast.ts)
+### Podcast pipeline (cli/podcast.ts)
 
 1. Parse the simulation markdown report into speaker segments
 2. Synthesise all segments in parallel via OpenAI TTS

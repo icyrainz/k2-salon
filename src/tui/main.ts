@@ -199,7 +199,7 @@ async function main() {
 
     for (const msg of tail) {
       // Restore color from roster (markdown transcripts don't store colors)
-      if (!msg.color && msg.agent && agentColorMap.has(msg.agent)) {
+      if (msg.agent && agentColorMap.has(msg.agent)) {
         (msg as any).color = agentColorMap.get(msg.agent)!;
       }
       tui.handle.pushMessage(msg);

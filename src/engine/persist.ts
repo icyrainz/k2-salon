@@ -118,6 +118,8 @@ export class TranscriptWriter {
   private filePath: string;
   private initialized = false;
   private participants: string[] = [];
+  private pending: RoomMessage[] = [];
+  private hasContent = false;
 
   constructor(roomName: string, session: number, topic: string) {
     this.filePath = sessionPath(roomName, session);
@@ -129,7 +131,6 @@ export class TranscriptWriter {
   private session: number;
 
   async init(participants: string[]): Promise<void> {
-    // Defer file creation until the first message is appended
     this.participants = participants;
     this.initialized = true;
   }
@@ -156,6 +157,22 @@ export class TranscriptWriter {
 
     const line = formatMessageToMarkdown(msg);
     if (!line) return;
+
+    // Buffer non-content messages until a chat or user message arrives
+    if (!this.hasContent) {
+      if (msg.kind !== "chat" && msg.kind !== "user") {
+        this.pending.push(msg);
+        return;
+      }
+      // First substantive message — flush buffered messages then write
+      this.hasContent = true;
+      await this.ensureFile();
+      for (const buffered of this.pending) {
+        const bufferedLine = formatMessageToMarkdown(buffered);
+        if (bufferedLine) await writeFile(this.filePath, bufferedLine, { flag: "a" });
+      }
+      this.pending = [];
+    }
 
     await this.ensureFile();
     await writeFile(this.filePath, line, { flag: "a" });

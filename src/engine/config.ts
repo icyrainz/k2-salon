@@ -3,6 +3,7 @@ import { existsSync } from "fs";
 import { join } from "path";
 import { parse } from "yaml";
 import type {
+  AgentColor,
   AgentConfig,
   Personality,
   ProviderEntry,
@@ -115,6 +116,9 @@ export function resolveRoster(
       );
     }
 
+    // Normalize ANSI color codes from legacy salon.yaml files
+    personality = { ...personality, color: normalizeColor(personality.color) };
+
     agents.push({
       personality,
       provider: providerEntry.kind,
@@ -143,6 +147,31 @@ function isFullPersonality(p: Partial<Personality>): p is Personality {
     typeof p.chattiness === "number" &&
     typeof p.contrarianism === "number"
   );
+}
+
+// ── Normalize ANSI escape codes → semantic AgentColor ────────────────
+
+const ANSI_TO_AGENT_COLOR: Record<string, AgentColor> = {
+  "\x1b[30m": "black",
+  "\x1b[31m": "red",
+  "\x1b[32m": "green",
+  "\x1b[33m": "yellow",
+  "\x1b[34m": "blue",
+  "\x1b[35m": "magenta",
+  "\x1b[36m": "cyan",
+  "\x1b[37m": "white",
+  "\x1b[90m": "gray",
+  "\x1b[91m": "redBright",
+  "\x1b[92m": "greenBright",
+  "\x1b[93m": "yellowBright",
+  "\x1b[94m": "blueBright",
+  "\x1b[95m": "magentaBright",
+  "\x1b[96m": "cyanBright",
+  "\x1b[97m": "whiteBright",
+};
+
+function normalizeColor(raw: string): AgentColor {
+  return ANSI_TO_AGENT_COLOR[raw] ?? (raw as AgentColor);
 }
 
 // ── Recursively resolve ${ENV_VAR} in all string values ─────────────
