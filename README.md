@@ -19,11 +19,13 @@ just salon-podcast "the future of nuclear energy"
 ## Requirements
 
 - [Bun](https://bun.sh) runtime
-- [ffmpeg](https://ffmpeg.org) — required for podcast audio concatenation
+- [ffmpeg](https://ffmpeg.org) — required for podcast and video generation (video needs `libfreetype` for text)
 - [mpv](https://mpv.io) — required for in-room TTS playback
 - At least one LLM provider configured (see [Configuration](#configuration))
-- `OPENAI_API_KEY` in `.env` — required for TTS (podcast and in-room playback)
+- `OPENAI_API_KEY` in `.env` — required for TTS (podcast, video, and in-room playback)
 - [just](https://github.com/casey/just) task runner (optional but recommended)
+- `PEXELS_API_KEY` / `PIXABAY_API_KEY` — optional, for stock video backgrounds in video mode
+- Ollama instance — optional, for LLM-based video tag generation and intro scripts
 
 ---
 
@@ -152,7 +154,7 @@ The `reports/` directory is gitignored.
 
 ## Video generation
 
-Generate a YouTube Short (1080x1920 vertical video) from any room's conversation.
+Generate a YouTube Short (1080x1920 vertical video) from any room's conversation — with stock video backgrounds, equalizer visualization, subtitle-style text, and a narrated intro.
 
 ### Commands
 
@@ -165,31 +167,46 @@ just video my-room --from 10 --to 45
 
 # Custom output file
 just video my-room --out custom.mp4
+
+# Regenerate TTS and intro audio (ignores cache)
+just video my-room --regen
 ```
 
 ### Requirements
 
-- [ffmpeg](https://ffmpeg.org) + ffprobe — for audio concat and video rendering
+- [ffmpeg](https://ffmpeg.org) + ffprobe — with `libfreetype` for text rendering (install via `brew install homebrew-ffmpeg/ffmpeg/ffmpeg` if drawtext is missing)
 - `OPENAI_API_KEY` in `.env` — for TTS synthesis
+- `PEXELS_API_KEY` and/or `PIXABAY_API_KEY` in `.env` — for stock video backgrounds (optional, falls back to solid color)
+- `OLLAMA_BASE_URL` and `OLLAMA_MODEL` in `.env` — for LLM-based tag generation and intro scripts (optional, falls back to basic keyword extraction)
 
 ### Pipeline
 
 1. Loads all session transcripts from the room
-2. Generates TTS audio for each content message (reuses cached audio)
-3. Probes audio durations and builds a timeline manifest (`manifest.json`)
-4. Concatenates all audio segments with pauses into `audio.mp3`
-5. Renders a vertical video with ffmpeg: dark background, audio waveform visualization, speaker names in color, subtitles, and a progress bar
+2. Generates a narrated intro with room title, topic, and participant introductions (TTS via OpenAI, cached at `rooms/<name>/tts/intro.mp3`)
+3. Generates TTS audio for each content message (reuses cached audio)
+4. Uses an LLM (ollama) to generate visual search keywords from the topic, then fetches stock video clips from Pexels and Pixabay as backgrounds
+5. Probes audio durations and builds a timeline manifest (`manifest.json`)
+6. Concatenates intro + conversation audio with pauses into `audio.mp3`
+7. Loops and normalizes background clips to fill the video duration
+8. Renders a vertical video with ffmpeg: stock video background (darkened), equalizer bars, speaker names in color, subtitle-style text, and intro cards
 
 ### Output files
 
 ```
 rooms/<name>/video/
   manifest.json    # Renderer-agnostic timeline (segments, participants, metadata)
-  audio.mp3        # Concatenated audio track
+  audio.mp3        # Concatenated audio track (intro + conversation)
   shorts.mp4       # Final video (1080x1920)
+  bg/              # Cached stock video clips (auto-downloaded)
 ```
 
 The manifest is renderer-agnostic — it describes the timeline, participants, and audio files without coupling to ffmpeg. This allows swapping the renderer later.
+
+### Multi-language support
+
+Video generation respects the room's language setting. Non-English rooms get:
+- LLM-generated intro narration in the room's language
+- Proper Unicode text rendering (requires Arial Unicode font)
 
 ---
 
@@ -307,13 +324,22 @@ roster:
 
 ## Environment variables
 
-Store keys in `.env` at the project root (loaded automatically by Bun):
+Store keys in `.env` at the project root (loaded automatically by Bun). See `.env.example` for a template.
 
 ```bash
+# LLM providers
 OPENROUTER_API_KEY=sk-or-...
 OPENCODE_ZEN_API_KEY=...
 MOONSHOT_API_KEY=...
-OPENAI_API_KEY=...        # Required for TTS (podcast + in-room /tts)
+
+# TTS — required for podcast, video, and /tts playback
+OPENAI_API_KEY=...
+
+# Video generation (optional)
+PEXELS_API_KEY=...        # Stock video backgrounds from Pexels
+PIXABAY_API_KEY=...       # Stock video backgrounds from Pixabay
+OLLAMA_BASE_URL=...       # Ollama URL for tag/intro generation (default: http://localhost:11434)
+OLLAMA_MODEL=...          # Ollama model name (default: qwen3:8b)
 ```
 
 ---
