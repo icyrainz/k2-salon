@@ -62,6 +62,12 @@ salon-podcast topic *args:
     echo "Report saved to $report"
     env -u OPENAI_API_KEY bun run src/cli/podcast.ts "$report" --out "reports/${slug}.mp3"
 
+# Generate a YouTube Short video from a room's conversation
+# Usage: just video <room-name>
+#        just video <room-name> --from 10 --to 45
+video *ARGS:
+    bun run src/cli/video.ts {{ARGS}}
+
 # ── Persona management ───────────────────────────────────────────────
 
 # Shuffle personas: pick a random subset from personas.yaml and write into salon.yaml
