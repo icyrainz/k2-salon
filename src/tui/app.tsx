@@ -370,7 +370,11 @@ interface TtsSelectBarProps {
   roomName: string;
 }
 
-function TtsSelectBar({ messages, selectedIndex, roomName }: TtsSelectBarProps) {
+function TtsSelectBar({
+  messages,
+  selectedIndex,
+  roomName,
+}: TtsSelectBarProps) {
   const speakable = messages.filter(
     (dm) => dm.msg.kind === "chat" || dm.msg.kind === "user",
   );
@@ -389,8 +393,7 @@ function TtsSelectBar({ messages, selectedIndex, roomName }: TtsSelectBarProps) 
       ? dm.msg.content.slice(0, 80) + "..."
       : dm.msg.content;
   const inkColor = toInkColor(dm.msg.color);
-  const cached =
-    dm.msg.id !== undefined && ttsExists(roomName, dm.msg.id);
+  const cached = dm.msg.id !== undefined && ttsExists(roomName, dm.msg.id);
 
   return (
     <Box flexDirection="column">
@@ -597,8 +600,7 @@ function App({
                 setMessages((prev) => {
                   const found = prev.some(
                     (dm) =>
-                      dm.msg.kind === "chat" &&
-                      dm.msg.id === event.msg.id,
+                      dm.msg.kind === "chat" && dm.msg.id === event.msg.id,
                   );
                   if (found) return prev; // already rendered via streaming
                   const id = nextId.current++;

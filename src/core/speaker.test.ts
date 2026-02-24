@@ -1,5 +1,9 @@
 import { describe, expect, it, beforeEach, afterEach, jest } from "bun:test";
-import { shouldSpeak, getSpeakerCandidates, peekNextSpeakerCandidates } from "./speaker.js";
+import {
+  shouldSpeak,
+  getSpeakerCandidates,
+  peekNextSpeakerCandidates,
+} from "./speaker.js";
 import type { AgentConfig, Personality } from "./types.js";
 
 function makeAgent(name: string, chattiness: number = 0.5): AgentConfig {
@@ -85,17 +89,23 @@ describe("getSpeakerCandidates", () => {
   it("excludes lastSpeaker from candidates", () => {
     const agents = [makeAgent("Alice", 1.0), makeAgent("Bob", 1.0)];
     randomSpy.mockReturnValue(0); // everyone "wants" to speak
-    const turns = new Map([["Alice", 2], ["Bob", 2]]);
+    const turns = new Map([
+      ["Alice", 2],
+      ["Bob", 2],
+    ]);
     const candidates = getSpeakerCandidates(agents, "Alice", turns);
-    expect(candidates.map(a => a.personality.name)).not.toContain("Alice");
-    expect(candidates.map(a => a.personality.name)).toContain("Bob");
+    expect(candidates.map((a) => a.personality.name)).not.toContain("Alice");
+    expect(candidates.map((a) => a.personality.name)).toContain("Bob");
   });
 
   it("falls back to longest-silent agent when no candidates", () => {
     // All agents have very low chattiness, so no one volunteers
     const agents = [makeAgent("Alice", 0), makeAgent("Bob", 0)];
     randomSpy.mockReturnValue(0.99); // nobody speaks
-    const turns = new Map([["Alice", 5], ["Bob", 10]]);
+    const turns = new Map([
+      ["Alice", 5],
+      ["Bob", 10],
+    ]);
     const candidates = getSpeakerCandidates(agents, null, turns);
     // Bob has been silent longest (10 turns)
     expect(candidates).toHaveLength(1);
@@ -111,32 +121,44 @@ describe("getSpeakerCandidates", () => {
 describe("peekNextSpeakerCandidates", () => {
   it("is deterministic (no random roll)", () => {
     const agents = [makeAgent("Alice", 0.5), makeAgent("Bob", 0.5)];
-    const turns = new Map([["Alice", 2], ["Bob", 2]]);
+    const turns = new Map([
+      ["Alice", 2],
+      ["Bob", 2],
+    ]);
     const result1 = peekNextSpeakerCandidates(agents, null, turns);
     const result2 = peekNextSpeakerCandidates(agents, null, turns);
-    expect(result1.map(a => a.personality.name)).toEqual(
-      result2.map(a => a.personality.name),
+    expect(result1.map((a) => a.personality.name)).toEqual(
+      result2.map((a) => a.personality.name),
     );
   });
 
   it("excludes lastSpeaker", () => {
     const agents = [makeAgent("Alice"), makeAgent("Bob")];
-    const turns = new Map([["Alice", 2], ["Bob", 2]]);
+    const turns = new Map([
+      ["Alice", 2],
+      ["Bob", 2],
+    ]);
     const candidates = peekNextSpeakerCandidates(agents, "Alice", turns);
-    expect(candidates.map(a => a.personality.name)).not.toContain("Alice");
+    expect(candidates.map((a) => a.personality.name)).not.toContain("Alice");
   });
 
   it("includes agents with turnsSince >= 1", () => {
     const agents = [makeAgent("Alice"), makeAgent("Bob")];
-    const turns = new Map([["Alice", 1], ["Bob", 0]]);
+    const turns = new Map([
+      ["Alice", 1],
+      ["Bob", 0],
+    ]);
     const candidates = peekNextSpeakerCandidates(agents, null, turns);
-    expect(candidates.map(a => a.personality.name)).toContain("Alice");
-    expect(candidates.map(a => a.personality.name)).not.toContain("Bob");
+    expect(candidates.map((a) => a.personality.name)).toContain("Alice");
+    expect(candidates.map((a) => a.personality.name)).not.toContain("Bob");
   });
 
   it("falls back when no candidates meet threshold", () => {
     const agents = [makeAgent("Alice"), makeAgent("Bob")];
-    const turns = new Map([["Alice", 0], ["Bob", 0]]);
+    const turns = new Map([
+      ["Alice", 0],
+      ["Bob", 0],
+    ]);
     // Both have 0 turns since spoke, neither meets >= 1 threshold
     // Fallback: first agent that isn't lastSpeaker
     const candidates = peekNextSpeakerCandidates(agents, "Alice", turns);

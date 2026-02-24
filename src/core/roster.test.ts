@@ -1,11 +1,28 @@
 import { describe, expect, it } from "bun:test";
-import { PERSONALITY_PRESETS, randomLeaveExcuse, randomJoinGreeting } from "./roster.js";
+import {
+  PERSONALITY_PRESETS,
+  randomLeaveExcuse,
+  randomJoinGreeting,
+} from "./roster.js";
 import type { AgentColor } from "./types.js";
 
 const VALID_COLORS: AgentColor[] = [
-  "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
-  "gray", "redBright", "greenBright", "yellowBright", "blueBright",
-  "magentaBright", "cyanBright", "whiteBright",
+  "black",
+  "red",
+  "green",
+  "yellow",
+  "blue",
+  "magenta",
+  "cyan",
+  "white",
+  "gray",
+  "redBright",
+  "greenBright",
+  "yellowBright",
+  "blueBright",
+  "magentaBright",
+  "cyanBright",
+  "whiteBright",
 ];
 
 describe("PERSONALITY_PRESETS", () => {
@@ -45,7 +62,7 @@ describe("PERSONALITY_PRESETS", () => {
   });
 
   it("all preset names are unique", () => {
-    const names = PERSONALITY_PRESETS.map(p => p.personality.name);
+    const names = PERSONALITY_PRESETS.map((p) => p.personality.name);
     expect(new Set(names).size).toBe(names.length);
   });
 });

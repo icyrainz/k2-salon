@@ -22,7 +22,10 @@ const testAgent: AgentConfig = {
   model: "test/model",
 };
 
-function makeMsg(overrides: Partial<RoomMessage> & Pick<RoomMessage, "kind" | "agent" | "content">): RoomMessage {
+function makeMsg(
+  overrides: Partial<RoomMessage> &
+    Pick<RoomMessage, "kind" | "agent" | "content">,
+): RoomMessage {
   return {
     timestamp: new Date(),
     color: "white",
@@ -89,7 +92,12 @@ describe("buildSystemPrompt", () => {
   });
 
   it("respects language parameter", () => {
-    const prompt = buildSystemPrompt(testPersonality, "topic", false, "Japanese");
+    const prompt = buildSystemPrompt(
+      testPersonality,
+      "topic",
+      false,
+      "Japanese",
+    );
     expect(prompt).toContain("Japanese");
   });
 
@@ -124,17 +132,21 @@ describe("buildMessages", () => {
       makeMsg({ kind: "chat", agent: "TestBot", content: "Hello world" }),
     ];
     const msgs = buildMessages(testAgent, "topic", history, 30);
-    const chat = msgs.find(m => m.role === "assistant");
+    const chat = msgs.find((m) => m.role === "assistant");
     expect(chat).toBeDefined();
     expect(chat!.content).toBe("Hello world");
   });
 
   it("converts other agents' messages to role=user with [NAME] prefix", () => {
     const history: RoomMessage[] = [
-      makeMsg({ kind: "chat", agent: "OtherBot", content: "Interesting point" }),
+      makeMsg({
+        kind: "chat",
+        agent: "OtherBot",
+        content: "Interesting point",
+      }),
     ];
     const msgs = buildMessages(testAgent, "topic", history, 30);
-    const chat = msgs.find(m => m.content.includes("[OtherBot]"));
+    const chat = msgs.find((m) => m.content.includes("[OtherBot]"));
     expect(chat).toBeDefined();
     expect(chat!.role).toBe("user");
     expect(chat!.content).toBe("[OtherBot]: Interesting point");
@@ -145,7 +157,7 @@ describe("buildMessages", () => {
       makeMsg({ kind: "user", agent: "YOU", content: "What do you think?" }),
     ];
     const msgs = buildMessages(testAgent, "topic", history, 30);
-    const user = msgs.find(m => m.content.includes("[HOST]"));
+    const user = msgs.find((m) => m.content.includes("[HOST]"));
     expect(user).toBeDefined();
     expect(user!.role).toBe("user");
   });
@@ -155,7 +167,7 @@ describe("buildMessages", () => {
       makeMsg({ kind: "join", agent: "NewBot", content: "A new bot" }),
     ];
     const msgs = buildMessages(testAgent, "topic", history, 30);
-    const join = msgs.find(m => m.content.includes("has joined"));
+    const join = msgs.find((m) => m.content.includes("has joined"));
     expect(join).toBeDefined();
     expect(join!.role).toBe("user");
     expect(join!.content).toContain("NewBot");
@@ -166,7 +178,7 @@ describe("buildMessages", () => {
       makeMsg({ kind: "leave", agent: "LeavingBot", content: "gotta go" }),
     ];
     const msgs = buildMessages(testAgent, "topic", history, 30);
-    const leave = msgs.find(m => m.content.includes("has left"));
+    const leave = msgs.find((m) => m.content.includes("has left"));
     expect(leave).toBeDefined();
     expect(leave!.role).toBe("user");
     expect(leave!.content).toContain("LeavingBot");
@@ -177,7 +189,7 @@ describe("buildMessages", () => {
       makeMsg({ kind: "system", agent: "SYSTEM", content: "Topic: AI" }),
     ];
     const msgs = buildMessages(testAgent, "topic", history, 30);
-    const sys = msgs.find(m => m.content.includes("[SYSTEM]"));
+    const sys = msgs.find((m) => m.content.includes("[SYSTEM]"));
     expect(sys).toBeDefined();
     expect(sys!.role).toBe("user");
   });

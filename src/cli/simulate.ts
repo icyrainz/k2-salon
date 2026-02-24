@@ -34,7 +34,9 @@ for (let i = 0; i < args.length; i++) {
 }
 
 if (!topic) {
-  process.stderr.write("Usage: bun run src/cli/simulate.ts \"topic\" [--messages N] [--lang LANG]\n");
+  process.stderr.write(
+    'Usage: bun run src/cli/simulate.ts "topic" [--messages N] [--lang LANG]\n',
+  );
   process.exit(1);
 }
 
@@ -56,7 +58,9 @@ async function simulate() {
   const allMessages: RoomMessage[] = [];
   let chatCount = 0;
 
-  engine.on("message", (msg) => { allMessages.push(msg); });
+  engine.on("message", (msg) => {
+    allMessages.push(msg);
+  });
 
   engine.open();
 
@@ -65,11 +69,13 @@ async function simulate() {
     await engine.step({ verbose: true, churn: false });
 
     // Count chat messages collected since last check
-    const newCount = allMessages.filter(m => m.kind === "chat").length;
+    const newCount = allMessages.filter((m) => m.kind === "chat").length;
     if (newCount > chatCount) {
       chatCount = newCount;
-      const last = allMessages.filter(m => m.kind === "chat").at(-1)!;
-      process.stderr.write(`  [${chatCount}/${targetMessages}] ${last.agent}\n`);
+      const last = allMessages.filter((m) => m.kind === "chat").at(-1)!;
+      process.stderr.write(
+        `  [${chatCount}/${targetMessages}] ${last.agent}\n`,
+      );
     }
   }
 
@@ -77,10 +83,10 @@ async function simulate() {
 
   const appearedNames = new Set(
     allMessages
-      .filter(m => m.kind === "chat" || m.kind === "join")
-      .map(m => m.agent),
+      .filter((m) => m.kind === "chat" || m.kind === "join")
+      .map((m) => m.agent),
   );
-  const rosterMap = new Map(roster.map(a => [a.personality.name, a]));
+  const rosterMap = new Map(roster.map((a) => [a.personality.name, a]));
 
   const lines: string[] = [];
 

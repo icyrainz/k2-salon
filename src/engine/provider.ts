@@ -1,4 +1,8 @@
-import type { CompletionRequest, CompletionResponse, ProviderKind } from "../core/types.js";
+import type {
+  CompletionRequest,
+  CompletionResponse,
+  ProviderKind,
+} from "../core/types.js";
 
 // ── Unified LLM provider ───────────────────────────────────────────
 
@@ -51,7 +55,9 @@ export async function listModels(
       if (!opts?.baseUrl) throw new Error("openai-compat requires a baseUrl");
       return listModelsOpenAI(opts.baseUrl, opts.apiKey);
     case "ollama":
-      return listModelsOllama(opts?.baseUrl || process.env.OLLAMA_BASE_URL || OLLAMA_BASE);
+      return listModelsOllama(
+        opts?.baseUrl || process.env.OLLAMA_BASE_URL || OLLAMA_BASE,
+      );
     default:
       throw new Error(`Unknown provider: ${provider}`);
   }
@@ -61,7 +67,9 @@ async function listModelsOpenAI(
   baseUrl: string,
   apiKey?: string,
 ): Promise<{ id: string; name?: string }[]> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
   const res = await fetch(`${baseUrl}/models`, { headers });
@@ -100,7 +108,8 @@ async function completeOpenRouter(
   const apiKey = opts?.apiKey || process.env.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error("OPENROUTER_API_KEY not set");
 
-  const baseUrl = opts?.baseUrl || process.env.OPENROUTER_BASE_URL || OPENROUTER_BASE;
+  const baseUrl =
+    opts?.baseUrl || process.env.OPENROUTER_BASE_URL || OPENROUTER_BASE;
   const doStream = !!stream?.onToken;
 
   const res = await fetch(`${baseUrl}/chat/completions`, {
@@ -142,7 +151,8 @@ async function completeOpenAICompat(
   stream?: StreamCallbacks,
   opts?: ProviderOpts,
 ): Promise<CompletionResponse> {
-  if (!opts?.baseUrl) throw new Error("openai-compat provider requires a baseUrl");
+  if (!opts?.baseUrl)
+    throw new Error("openai-compat provider requires a baseUrl");
 
   const baseUrl = opts.baseUrl;
   const doStream = !!stream?.onToken;
@@ -181,8 +191,7 @@ async function completeOpenAICompat(
   if (!res.ok) {
     const text = await res.text();
     const isTemperatureError =
-      text.toLowerCase().includes("temperature") &&
-      req.temperature === 0.9; // only retry on our default, not explicit config
+      text.toLowerCase().includes("temperature") && req.temperature === 0.9; // only retry on our default, not explicit config
     if (isTemperatureError) {
       res = await fetch(`${baseUrl}/chat/completions`, {
         method: "POST",
@@ -261,7 +270,9 @@ async function readSSEStream(
   let truncated = false;
 
   // Cancel the reader when the abort signal fires
-  signal?.addEventListener("abort", () => { reader.cancel().catch(() => {}); });
+  signal?.addEventListener("abort", () => {
+    reader.cancel().catch(() => {});
+  });
 
   try {
     while (true) {
@@ -322,7 +333,9 @@ async function readOllamaStream(
   let full = "";
   let buffer = "";
 
-  signal?.addEventListener("abort", () => { reader.cancel().catch(() => {}); });
+  signal?.addEventListener("abort", () => {
+    reader.cancel().catch(() => {});
+  });
 
   try {
     while (true) {

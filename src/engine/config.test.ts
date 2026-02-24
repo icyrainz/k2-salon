@@ -43,11 +43,15 @@ describe("resolveEnvVars", () => {
 
   it("replaces ${VAR} with env values", () => {
     expect(resolveEnvVars("${TEST_VAR}")).toBe("hello");
-    expect(resolveEnvVars("prefix-${TEST_VAR}-suffix")).toBe("prefix-hello-suffix");
+    expect(resolveEnvVars("prefix-${TEST_VAR}-suffix")).toBe(
+      "prefix-hello-suffix",
+    );
   });
 
   it("keeps literal ${VAR} when env var missing", () => {
-    expect(resolveEnvVars("${NONEXISTENT_VAR_12345}")).toBe("${NONEXISTENT_VAR_12345}");
+    expect(resolveEnvVars("${NONEXISTENT_VAR_12345}")).toBe(
+      "${NONEXISTENT_VAR_12345}",
+    );
   });
 
   it("handles nested objects and arrays", () => {
@@ -123,7 +127,9 @@ describe("resolveRoster", () => {
   });
 
   it("matches preset names case-insensitively", () => {
-    const config = minConfig([{ name: "sage", provider: "testprov", model: "m1" }]);
+    const config = minConfig([
+      { name: "sage", provider: "testprov", model: "m1" },
+    ]);
     const result = resolveRoster(config, PERSONALITY_PRESETS);
     expect(result).toHaveLength(1);
     expect(result[0].personality.name).toBe("Sage");
@@ -131,7 +137,12 @@ describe("resolveRoster", () => {
 
   it("merges partial personality overrides", () => {
     const config = minConfig([
-      { name: "Sage", provider: "testprov", model: "m1", personality: { tagline: "Overridden tagline" } },
+      {
+        name: "Sage",
+        provider: "testprov",
+        model: "m1",
+        personality: { tagline: "Overridden tagline" },
+      },
     ]);
     const result = resolveRoster(config, PERSONALITY_PRESETS);
     expect(result[0].personality.tagline).toBe("Overridden tagline");
@@ -164,13 +175,21 @@ describe("resolveRoster", () => {
   });
 
   it("throws on unknown provider", () => {
-    const config = minConfig([{ name: "Sage", provider: "nonexistent", model: "m1" }]);
-    expect(() => resolveRoster(config, PERSONALITY_PRESETS)).toThrow("not found");
+    const config = minConfig([
+      { name: "Sage", provider: "nonexistent", model: "m1" },
+    ]);
+    expect(() => resolveRoster(config, PERSONALITY_PRESETS)).toThrow(
+      "not found",
+    );
   });
 
   it("throws on unknown name without full personality", () => {
-    const config = minConfig([{ name: "Unknown", provider: "testprov", model: "m1" }]);
-    expect(() => resolveRoster(config, PERSONALITY_PRESETS)).toThrow("no matching preset");
+    const config = minConfig([
+      { name: "Unknown", provider: "testprov", model: "m1" },
+    ]);
+    expect(() => resolveRoster(config, PERSONALITY_PRESETS)).toThrow(
+      "no matching preset",
+    );
   });
 
   it("normalizes ANSI colors in resolved roster", () => {
@@ -208,7 +227,10 @@ describe("loadConfig", () => {
   let tmpDir: string;
 
   beforeEach(async () => {
-    tmpDir = join(tmpdir(), `k2-config-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    tmpDir = join(
+      tmpdir(),
+      `k2-config-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
     await mkdir(tmpDir, { recursive: true });
   });
 
