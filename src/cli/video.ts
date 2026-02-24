@@ -103,10 +103,7 @@ function concatenateMp3s(
   tmpDir: string,
 ): void {
   const listPath = join(tmpDir, "concat.txt");
-  writeFileSync(
-    listPath,
-    inputPaths.map((p) => `file '${p}'`).join("\n"),
-  );
+  writeFileSync(listPath, inputPaths.map((p) => `file '${p}'`).join("\n"));
   ffmpeg([
     "-f",
     "concat",
@@ -153,9 +150,7 @@ async function main() {
   // 2. Load all messages from all sessions
   const allMessages = await loadPreviousSessions(roomName, Infinity);
   if (allMessages.length === 0) {
-    process.stderr.write(
-      `Error: no messages found in room "${roomName}"\n`,
-    );
+    process.stderr.write(`Error: no messages found in room "${roomName}"\n`);
     process.exit(1);
   }
 
@@ -178,13 +173,9 @@ async function main() {
     });
   }
 
-  const contentMessages = filtered.filter(
-    (m) => m.id && isContentId(m.id),
-  );
+  const contentMessages = filtered.filter((m) => m.id && isContentId(m.id));
   if (contentMessages.length === 0) {
-    process.stderr.write(
-      "Error: no content messages in the specified range\n",
-    );
+    process.stderr.write("Error: no content messages in the specified range\n");
     process.exit(1);
   }
 
@@ -253,9 +244,7 @@ async function main() {
     const agent = roster.find((a) => a.personality.name === name);
     return {
       name,
-      color: toHexColor(
-        (agent?.personality.color ?? "white") as AgentColor,
-      ),
+      color: toHexColor((agent?.personality.color ?? "white") as AgentColor),
       voice: voiceFor(name),
       tagline: agent?.personality.tagline ?? "",
     };
@@ -297,10 +286,7 @@ async function main() {
     if (!seg.audioFile) continue;
     chunkPaths.push(seg.audioFile);
     if (seg.pauseAfter > 0) {
-      const silPath = join(
-        tmpDir,
-        `${String(i).padStart(4, "0")}-silence.mp3`,
-      );
+      const silPath = join(tmpDir, `${String(i).padStart(4, "0")}-silence.mp3`);
       generateSilence(seg.pauseAfter * 1000, silPath);
       chunkPaths.push(silPath);
     }
