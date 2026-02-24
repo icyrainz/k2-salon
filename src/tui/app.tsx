@@ -39,6 +39,12 @@ interface DisplayMessage {
   isStreaming?: boolean;
 }
 
+export interface TtsActivity {
+  agent: string;
+  color: AgentColor;
+  phase: "generating" | "playing";
+}
+
 // ── Header ──────────────────────────────────────────────────────────
 
 interface HeaderProps {
@@ -231,6 +237,7 @@ interface InputLineProps {
 const COMMANDS = [
   { cmd: "/next",    hint: "advance discussion" },
   { cmd: "/who",     hint: "show participants" },
+  { cmd: "/tts",     hint: "play message audio" },
   { cmd: "/shuffle", hint: "new random roster" },
   { cmd: "/govern",  hint: "take control" },
   { cmd: "/free",    hint: "auto mode" },
@@ -310,6 +317,46 @@ function InputLine({ onSubmit }: InputLineProps) {
   );
 }
 
+// ── TTS selection bar ────────────────────────────────────────────────
+
+interface TtsSelectBarProps {
+  messages: DisplayMessage[];
+  selectedIndex: number;
+}
+
+function TtsSelectBar({ messages, selectedIndex }: TtsSelectBarProps) {
+  const speakable = messages.filter(
+    (dm) => dm.msg.kind === "chat" || dm.msg.kind === "user",
+  );
+  if (speakable.length === 0) {
+    return (
+      <Box>
+        <Text dimColor>  No messages to play.</Text>
+      </Box>
+    );
+  }
+
+  const idx = Math.min(selectedIndex, speakable.length - 1);
+  const dm = speakable[speakable.length - 1 - idx];
+  const preview = dm.msg.content.length > 80
+    ? dm.msg.content.slice(0, 80) + "..."
+    : dm.msg.content;
+  const inkColor = toInkColor(dm.msg.color);
+
+  return (
+    <Box flexDirection="column">
+      <Box>
+        <Text color="yellow" bold>  ▶ TTS: </Text>
+        <Text bold color={inkColor}>[{dm.msg.agent}]</Text>
+        <Text> "{preview}"</Text>
+      </Box>
+      <Box>
+        <Text dimColor>    [↑↓] select  [Enter] play  [Esc] cancel</Text>
+      </Box>
+    </Box>
+  );
+}
+
 // ── App (top-level) ─────────────────────────────────────────────────
 
 export interface TuiProps {
@@ -325,6 +372,7 @@ export interface TuiHandle {
   setActiveAgents: (agents: readonly AgentConfig[]) => void;
   showWho: (agents: readonly AgentConfig[]) => void;
   setGoverned: (governed: boolean) => void;
+  setTtsActivity: (activity: TtsActivity | null) => void;
 }
 
 // ── Engine events bridge ────────────────────────────────────────────
@@ -338,7 +386,8 @@ type TuiEvent =
   | { type: "streamDone"; agent: string }
   | { type: "setActiveAgents"; agents: readonly AgentConfig[] }
   | { type: "showWho"; agents: readonly AgentConfig[] }
-  | { type: "setGoverned"; governed: boolean };
+  | { type: "setGoverned"; governed: boolean }
+  | { type: "setTtsActivity"; activity: TtsActivity | null };
 
 let eventQueue: TuiEvent[] = [];
 let eventFlush: (() => void) | null = null;
@@ -372,6 +421,9 @@ function App({
     color: AgentColor;
     phase: "thinking" | "responding";
   } | null>(null);
+  const [ttsSelectMode, setTtsSelectMode] = useState(false);
+  const [ttsSelectIndex, setTtsSelectIndex] = useState(0);
+  const [ttsActivity, setTtsActivityState] = useState<TtsActivity | null>(null);
   const nextId = useRef(0);
   const streamingRef = useRef<{
     agent: string;
@@ -525,6 +577,10 @@ function App({
           case "setGoverned":
             setGoverned(event.governed);
             break;
+
+          case "setTtsActivity":
+            setTtsActivityState(event.activity);
+            break;
         }
       }
     };
@@ -590,9 +646,53 @@ function App({
         return;
       }
 
+      if (trimmed === "/tts") {
+        const speakable = messages.filter(
+          (dm) => dm.msg.kind === "chat" || dm.msg.kind === "user",
+        );
+        if (speakable.length === 0) return;
+        setTtsSelectMode(true);
+        setTtsSelectIndex(0);
+        return;
+      }
+
       onUserInput(trimmed);
     },
-    [onUserInput, onQuit, exit],
+    [onUserInput, onQuit, exit, messages],
+  );
+
+  // TTS selection mode keys
+  useInput(
+    (input, key) => {
+      if (key.escape) {
+        setTtsSelectMode(false);
+        return;
+      }
+      if (key.upArrow || (key.ctrl && input === "p")) {
+        const speakable = messages.filter(
+          (dm) => dm.msg.kind === "chat" || dm.msg.kind === "user",
+        );
+        setTtsSelectIndex((i) => Math.min(i + 1, speakable.length - 1));
+        return;
+      }
+      if (key.downArrow || (key.ctrl && input === "n")) {
+        setTtsSelectIndex((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (key.return) {
+        const speakable = messages.filter(
+          (dm) => dm.msg.kind === "chat" || dm.msg.kind === "user",
+        );
+        if (speakable.length === 0) return;
+        const idx = Math.min(ttsSelectIndex, speakable.length - 1);
+        const dm = speakable[speakable.length - 1 - idx];
+        setTtsSelectMode(false);
+        if (dm.msg.id === undefined) return;
+        onUserInput(`\x00TTS:${dm.msg.id}:${dm.msg.agent}`);
+        return;
+      }
+    },
+    { isActive: ttsSelectMode },
   );
 
   const streamingDm = messages.find((dm) => dm.isStreaming);
@@ -626,6 +726,10 @@ function App({
 
       {whoDisplay && <WhoTable agents={[...whoDisplay]} />}
 
+      {ttsSelectMode && (
+        <TtsSelectBar messages={messages} selectedIndex={ttsSelectIndex} />
+      )}
+
       <Box>
         {activeAgents.length > 0 && (
           <StatusBar
@@ -654,9 +758,22 @@ function App({
         </Box>
       )}
 
+      {ttsActivity && !agentActivity && (
+        <Box>
+          <Text>  </Text>
+          <Spinner active={true} />
+          <Text> </Text>
+          <Text bold color={toInkColor(ttsActivity.color)}>
+            {ttsActivity.phase === "generating"
+              ? `Generating speech for ${ttsActivity.agent}...`
+              : `Playing ${ttsActivity.agent}...`}
+          </Text>
+        </Box>
+      )}
+
       <Text dimColor>{"─".repeat(60)}</Text>
 
-      <InputLine onSubmit={handleSubmit} />
+      {!ttsSelectMode && <InputLine onSubmit={handleSubmit} />}
     </Box>
   );
 }
@@ -684,6 +801,7 @@ export function renderTui(
       emitTuiEvent({ type: "setActiveAgents", agents }),
     showWho: (agents) => emitTuiEvent({ type: "showWho", agents }),
     setGoverned: (governed) => emitTuiEvent({ type: "setGoverned", governed }),
+    setTtsActivity: (activity) => emitTuiEvent({ type: "setTtsActivity", activity }),
   };
 
   return {
