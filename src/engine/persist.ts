@@ -3,6 +3,7 @@ import { existsSync } from "fs";
 import { join, basename } from "path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { AgentColor, RoomMessage } from "../core/types.js";
+import { makeId } from "../core/types.js";
 
 // ── Room directory structure ────────────────────────────────────────
 //
@@ -232,6 +233,18 @@ function fmtTimeISO(d: Date): string {
 
 // ── Parse session markdown back into RoomMessage[] ──────────────────
 
+/** Normalize a parsed ID string: pass through NNNN-m/e format, convert bare integers via makeId */
+function normalizeId(
+  raw: string | undefined,
+  kind: RoomMessage["kind"],
+): string | undefined {
+  if (!raw) return undefined;
+  if (raw.match(/^\d{4}-[me]$/)) return raw;
+  const seq = parseInt(raw, 10);
+  if (isNaN(seq)) return undefined;
+  return makeId(seq, kind);
+}
+
 export function parseSessionMarkdown(content: string): RoomMessage[] {
   const messages: RoomMessage[] = [];
 
@@ -248,19 +261,20 @@ export function parseSessionMarkdown(content: string): RoomMessage[] {
 
     // System/join/leave: > **NAME** *HH:MM* [kind] — content
     // or: > **SYSTEM** *HH:MM* — content
-    // Optional #N message ID between timestamp and kind tag
+    // Optional message ID: #NNNN-m/#NNNN-e (new) or #N (legacy bare integer)
     const eventMatch = trimmed.match(
-      /^>\s*\*\*(\w+)\*\*\s*\*(\d{2}:\d{2})\*\s*(?:#(\d{4}-[me])\s*)?(?:\[(\w+)\]\s*)?—\s*(.+)$/s,
+      /^>\s*\*\*(\w+)\*\*\s*\*(\d{2}:\d{2})\*\s*(?:#(\d{4}-[me]|\d+)\s*)?(?:\[(\w+)\]\s*)?—\s*(.+)$/s,
     );
     if (eventMatch) {
-      const [, agent, _time, idStr, kindTag, content] = eventMatch;
+      const [, agent, _time, rawId, kindTag, content] = eventMatch;
       let kind: RoomMessage["kind"] = "system";
       if (kindTag === "join") kind = "join";
       else if (kindTag === "leave") kind = "leave";
       else if (agent === "SYSTEM") kind = "system";
 
+      const id = normalizeId(rawId, kind);
       messages.push({
-        ...(idStr ? { id: idStr } : {}),
+        ...(id ? { id } : {}),
         timestamp: new Date(),
         agent,
         content: content.trim(),
@@ -272,17 +286,19 @@ export function parseSessionMarkdown(content: string): RoomMessage[] {
 
     // Chat/user: **NAME** *HH:MM* [#N]\ncontent (possibly multi-line)
     const chatMatch = trimmed.match(
-      /^\*\*(\w+)\*\*\s*\*(\d{2}:\d{2})\*(?:\s*#(\d{4}-[me]))?\n([\s\S]+)$/,
+      /^\*\*(\w+)\*\*\s*\*(\d{2}:\d{2})\*(?:\s*#(\d{4}-[me]|\d+))?\n([\s\S]+)$/,
     );
     if (chatMatch) {
-      const [, agent, _time, idStr, content] = chatMatch;
+      const [, agent, _time, rawId, content] = chatMatch;
+      const kind: RoomMessage["kind"] = agent === "YOU" ? "user" : "chat";
+      const id = normalizeId(rawId, kind);
       messages.push({
-        ...(idStr ? { id: idStr } : {}),
+        ...(id ? { id } : {}),
         timestamp: new Date(),
         agent,
         content: content.trim(),
         color: "white",
-        kind: agent === "YOU" ? "user" : "chat",
+        kind,
       });
       continue;
     }
@@ -347,7 +363,6 @@ export function parseSeedToMessages(seedContent: string): RoomMessage[] {
     const headingMatch = trimmed.match(/^#\s+(.+)/);
     if (headingMatch) {
       messages.push({
-        id: "",
         timestamp: new Date(),
         agent: "SYSTEM",
         content: `Prior discussion: ${headingMatch[1]}`,
@@ -360,7 +375,6 @@ export function parseSeedToMessages(seedContent: string): RoomMessage[] {
     // Generic content block — treat as context
     if (trimmed.length > 20) {
       messages.push({
-        id: "",
         timestamp: new Date(),
         agent: "SYSTEM",
         content: trimmed,

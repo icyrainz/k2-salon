@@ -221,6 +221,31 @@ Third line`;
     expect(parsed[0].id).toBe("0007-m");
     expect(parsed[0].content).toBe("ID test");
   });
+
+  it("parses legacy bare integer IDs from chat messages", () => {
+    const content = `**Sage** *14:30* #16\nHello from the old format`;
+    const messages = parseSessionMarkdown(content);
+    expect(messages).toHaveLength(1);
+    expect(messages[0].id).toBe("0016-m");
+    expect(messages[0].kind).toBe("chat");
+    expect(messages[0].content).toBe("Hello from the old format");
+  });
+
+  it("parses legacy bare integer IDs from event messages", () => {
+    const content = `> **Ora** *22:12* #13 [join] — Mindfulness teacher`;
+    const messages = parseSessionMarkdown(content);
+    expect(messages).toHaveLength(1);
+    expect(messages[0].id).toBe("0013-e");
+    expect(messages[0].kind).toBe("join");
+  });
+
+  it("parses messages with no ID at all", () => {
+    const content = `**Sage** *21:18*\nOld message with no ID`;
+    const messages = parseSessionMarkdown(content);
+    expect(messages).toHaveLength(1);
+    expect(messages[0].id).toBeUndefined();
+    expect(messages[0].content).toBe("Old message with no ID");
+  });
 });
 
 describe("parseSeedToMessages", () => {
