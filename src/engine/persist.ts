@@ -201,7 +201,7 @@ export class TranscriptWriter {
 
 export function formatMessageToMarkdown(msg: RoomMessage): string {
   const time = fmtTimeISO(msg.timestamp);
-  const idTag = msg.id !== undefined ? ` #${msg.id}` : "";
+  const idTag = msg.id ? ` #${msg.id}` : "";
 
   switch (msg.kind) {
     case "system":
@@ -250,7 +250,7 @@ export function parseSessionMarkdown(content: string): RoomMessage[] {
     // or: > **SYSTEM** *HH:MM* — content
     // Optional #N message ID between timestamp and kind tag
     const eventMatch = trimmed.match(
-      /^>\s*\*\*(\w+)\*\*\s*\*(\d{2}:\d{2})\*\s*(?:#(\d+)\s*)?(?:\[(\w+)\]\s*)?—\s*(.+)$/s,
+      /^>\s*\*\*(\w+)\*\*\s*\*(\d{2}:\d{2})\*\s*(?:#(\d{4}-[me])\s*)?(?:\[(\w+)\]\s*)?—\s*(.+)$/s,
     );
     if (eventMatch) {
       const [, agent, _time, idStr, kindTag, content] = eventMatch;
@@ -260,29 +260,29 @@ export function parseSessionMarkdown(content: string): RoomMessage[] {
       else if (agent === "SYSTEM") kind = "system";
 
       messages.push({
+        id: idStr ?? "",
         timestamp: new Date(),
         agent,
         content: content.trim(),
         color: "white",
         kind,
-        ...(idStr ? { id: parseInt(idStr, 10) } : {}),
       });
       continue;
     }
 
     // Chat/user: **NAME** *HH:MM* [#N]\ncontent (possibly multi-line)
     const chatMatch = trimmed.match(
-      /^\*\*(\w+)\*\*\s*\*(\d{2}:\d{2})\*(?:\s*#(\d+))?\n([\s\S]+)$/,
+      /^\*\*(\w+)\*\*\s*\*(\d{2}:\d{2})\*(?:\s*#(\d{4}-[me]))?\n([\s\S]+)$/,
     );
     if (chatMatch) {
       const [, agent, _time, idStr, content] = chatMatch;
       messages.push({
+        id: idStr ?? "",
         timestamp: new Date(),
         agent,
         content: content.trim(),
         color: "white",
         kind: agent === "YOU" ? "user" : "chat",
-        ...(idStr ? { id: parseInt(idStr, 10) } : {}),
       });
       continue;
     }
@@ -314,6 +314,7 @@ export function parseSeedToMessages(seedContent: string): RoomMessage[] {
       const body = trimmed.replace(/^## User\s*\n*/, "").trim();
       if (body) {
         messages.push({
+          id: "",
           timestamp: new Date(),
           agent: "YOU",
           content: body,
@@ -332,6 +333,7 @@ export function parseSeedToMessages(seedContent: string): RoomMessage[] {
       const body = assistantMatch[2].trim();
       if (body) {
         messages.push({
+          id: "",
           timestamp: new Date(),
           agent: "PRIOR",
           content: body,
@@ -347,6 +349,7 @@ export function parseSeedToMessages(seedContent: string): RoomMessage[] {
     const headingMatch = trimmed.match(/^#\s+(.+)/);
     if (headingMatch) {
       messages.push({
+        id: "",
         timestamp: new Date(),
         agent: "SYSTEM",
         content: `Prior discussion: ${headingMatch[1]}`,
@@ -359,6 +362,7 @@ export function parseSeedToMessages(seedContent: string): RoomMessage[] {
     // Generic content block — treat as context
     if (trimmed.length > 20) {
       messages.push({
+        id: "",
         timestamp: new Date(),
         agent: "SYSTEM",
         content: trimmed,
