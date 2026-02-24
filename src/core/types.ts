@@ -81,8 +81,8 @@ export interface AgentConfig {
 // ── Room ────────────────────────────────────────────────────────────
 
 export interface RoomMessage {
-  /** Sequential message ID assigned by SalonEngine */
-  id?: number;
+  /** Message ID: "NNNN-m" (chat/user) or "NNNN-e" (join/leave/system) */
+  id: string;
   timestamp: Date;
   agent: string; // personality name, or "SYSTEM" / "YOU"
   content: string;
@@ -91,6 +91,23 @@ export interface RoomMessage {
   /** Provider key + model (set on join messages for display) */
   providerLabel?: string;
   modelLabel?: string;
+}
+
+/** Build a message ID string from a sequence number and kind. */
+export function makeId(seq: number, kind: RoomMessage["kind"]): string {
+  const suffix = kind === "chat" || kind === "user" ? "m" : "e";
+  return `${String(seq).padStart(4, "0")}-${suffix}`;
+}
+
+/** Extract the numeric sequence from an ID string. Returns -1 if invalid. */
+export function parseId(id: string): number {
+  const match = id.match(/^(\d+)-[me]$/);
+  return match ? parseInt(match[1], 10) : -1;
+}
+
+/** Check if an ID is a content message (chat/user). */
+export function isContentId(id: string): boolean {
+  return id.endsWith("-m");
 }
 
 export interface RoomConfig {
