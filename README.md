@@ -20,8 +20,9 @@ just salon-podcast "the future of nuclear energy"
 
 - [Bun](https://bun.sh) runtime
 - [ffmpeg](https://ffmpeg.org) — required for podcast audio concatenation
+- [mpv](https://mpv.io) — required for in-room TTS playback
 - At least one LLM provider configured (see [Configuration](#configuration))
-- `OPENAI_API_KEY` in `.env` — required for podcast TTS
+- `OPENAI_API_KEY` in `.env` — required for TTS (podcast and in-room playback)
 - [just](https://github.com/casey/just) task runner (optional but recommended)
 
 ---
@@ -48,6 +49,7 @@ just fish-setup      # Install fish shell tab completions
 | `/free` | Switch to free mode — agents speak automatically |
 | `/govern` | Switch back to governed mode |
 | `/who` | Show a table of agents with provider/model info |
+| `/tts` | Listen to a message — opens selection bar to pick which message to play |
 | `/shuffle` | Randomise the agent roster |
 | `/quit` or `/exit` | Leave gracefully |
 | Ctrl+C | Force quit |
@@ -57,6 +59,23 @@ just fish-setup      # Install fish shell tab completions
 **Governed mode** (default): agents queue up one at a time. A system message announces who is ready; you press `/next` to let them speak, or type a reply to redirect the conversation. Agents write longer, more developed responses.
 
 **Free mode** (`/free`): agents speak automatically with natural pacing delays and short chat-style responses. Agents join and leave dynamically (churn). Type at any time to interject.
+
+### TTS playback
+
+Type `/tts` to listen to any message in the conversation. A selection bar appears at the bottom — use arrow keys (or Ctrl+N/Ctrl+P) to scroll through messages, then Enter to play. Messages with cached audio show a green `●` indicator.
+
+Audio is synthesised via OpenAI TTS and cached in `rooms/<name>/tts/`. Cached messages play instantly on subsequent listens.
+
+**Playback controls** (while audio is playing):
+
+| Key | Effect |
+|-----|--------|
+| `←` / `→` | Seek -5s / +5s |
+| `Space` | Pause / resume |
+| `[` / `]` | Slow down / speed up |
+| `Esc` or `q` | Stop playback |
+
+A progress bar shows position, duration, and speed during playback.
 
 ### TUI layout
 
@@ -89,6 +108,9 @@ rooms/
     seed.md            # Optional seed material
     001-session.md     # Session transcripts
     002-session.md
+    tts/               # Cached TTS audio (auto-generated)
+      msg-0.mp3
+      msg-5.mp3
 ```
 
 - **Resuming**: `just room ai-thoughts` loads the previous session context and continues
@@ -246,7 +268,7 @@ Store keys in `.env` at the project root (loaded automatically by Bun):
 OPENROUTER_API_KEY=sk-or-...
 OPENCODE_ZEN_API_KEY=...
 MOONSHOT_API_KEY=...
-OPENAI_API_KEY=...        # Required for podcast TTS
+OPENAI_API_KEY=...        # Required for TTS (podcast + in-room /tts)
 ```
 
 ---
@@ -263,20 +285,26 @@ src/
     personality.ts     System prompt builder, LLM message formatter
     speaker.ts         shouldSpeak(), getSpeakerCandidates() — pure probability logic
     churn.ts           evaluateChurn() → ChurnDecision (who should join/leave)
+    voices.ts          TTS voice map — agent name → OpenAI voice assignment
   engine/              Stateful orchestration, EventEmitter
     salon-engine.ts    SalonEngine class — owns room state, drives agent turns
     provider.ts        Unified LLM client (openrouter, openai-compat, ollama)
     config.ts          YAML config loader, ${ENV_VAR} resolution, roster resolver
     persist.ts         Transcript writer, session loader, seed parser
+    tts.ts             OpenAI TTS synthesis, caching, mpv playback with IPC controls
   tui/                 Terminal UI (Ink/React)
-    main.ts            Entry point — room setup, governed/free mode loop
-    app.tsx            React component tree — chat pane, streaming, input, status bar
+    main.ts            Entry point — room setup, governed/free mode loop, TTS wiring
+    app.tsx            React component tree — chat pane, streaming, TTS UI, input, status bar
     colors.ts          AgentColor → ink color mapping
   cli/                 Other CLI entry points
     simulate.ts        Headless simulation — calls engine.step() in a loop, no UI
     podcast.ts         OpenAI TTS per turn, parallel synthesis, ffmpeg concat
     models.ts          `just models` command
     shuffle-personas.ts  Pick random personas from personas.yaml into salon.yaml
+prompts/                 Externalized system prompt templates
+  system.md            Main system prompt with {{variable}} placeholders
+  rules-verbose.md     Verbose mode length/tone rules
+  rules-concise.md     Concise mode length/tone rules
 completions/
   k2-salon.fish        Fish shell completions + salon alias
 reports/               Generated simulation transcripts + podcast MP3s (gitignored)
@@ -304,7 +332,9 @@ while (collecting) {
 
 `engine.step()` runs exactly one agent turn — picks a speaker, calls the LLM, emits the response via events — and returns. No polling, no wait loops inside the engine.
 
-**Events:** `message`, `thinking`, `streamToken`, `streamDone`
+**Events:** `message`, `thinking(agent, msgId)`, `streamToken`, `streamDone`
+
+Each message gets a sequential `id` assigned by the engine. The `thinking` event includes the pre-allocated message ID so the TUI can associate streaming content with the final persisted message from the start. IDs are preserved across sessions for TTS cache consistency.
 
 **`StepOptions`:**
 - `verbose` — agents write long paragraphs (governed mode / simulation) vs short chat messages (free mode)
