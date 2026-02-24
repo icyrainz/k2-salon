@@ -1,5 +1,6 @@
 import { TypedEmitter } from "tiny-typed-emitter";
 import type { AgentConfig, RoomConfig, RoomMessage } from "../core/types.js";
+import { makeId, parseId } from "../core/types.js";
 import { buildMessages } from "../core/personality.js";
 import {
   getSpeakerCandidates,
@@ -13,7 +14,7 @@ import { complete } from "./provider.js";
 
 interface SalonEvents {
   message: (msg: RoomMessage) => void;
-  thinking: (agent: string, msgId: number) => void;
+  thinking: (agent: string, msgId: string) => void;
   streamToken: (agent: string, token: string) => void;
   streamDone: (agent: string) => void;
 }
@@ -39,7 +40,7 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
   private turnsSinceSpoke = new Map<string, number>();
   private _running = false;
   private abortController = new AbortController();
-  private nextMsgId = 0;
+  private nextId = 0;
 
   get activeAgents(): readonly AgentConfig[] {
     return this._activeAgents;
@@ -64,18 +65,12 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
     this.config = config;
 
     if (preloadedHistory) {
-      // Preserve existing IDs from transcripts (for TTS cache consistency).
-      // For legacy messages without IDs, use their index as a stable fallback.
-      this.history = preloadedHistory.map((msg, i) => ({
-        ...msg,
-        id: msg.id ?? i,
-      }));
-      // Start new IDs above the highest existing one to avoid collisions
-      const maxId = this.history.reduce(
-        (max, m) => Math.max(max, m.id ?? 0),
-        0,
+      this.history = [...preloadedHistory];
+      const maxSeq = this.history.reduce(
+        (max, m) => Math.max(max, parseId(m.id)),
+        -1,
       );
-      this.nextMsgId = maxId + 1;
+      this.nextId = maxSeq + 1;
     }
 
     // Determine initial active vs benched agents
@@ -112,6 +107,7 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
     this._running = true;
 
     this.pushMessage({
+      id: "",
       timestamp: new Date(),
       agent: "SYSTEM",
       content: `Topic: "${this.config.topic}"`,
@@ -121,6 +117,7 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
 
     for (const agent of this._activeAgents) {
       this.pushMessage({
+        id: "",
         timestamp: new Date(),
         agent: agent.personality.name,
         content: agent.personality.tagline,
@@ -171,6 +168,7 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
   shuffle(): void {
     for (const agent of this._activeAgents) {
       this.pushMessage({
+        id: "",
         timestamp: new Date(),
         agent: agent.personality.name,
         content: randomLeaveExcuse(),
@@ -200,6 +198,7 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
 
     for (const agent of this._activeAgents) {
       this.pushMessage({
+        id: "",
         timestamp: new Date(),
         agent: agent.personality.name,
         content: `${agent.personality.tagline} — ${randomJoinGreeting()}`,
@@ -216,6 +215,7 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
 
   injectUserMessage(content: string): void {
     this.pushMessage({
+      id: "",
       timestamp: new Date(),
       agent: "YOU",
       content: content.trim(),
@@ -255,9 +255,8 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
   // ── Internal: push a message to history and emit ───────────────
 
   private pushMessage(msg: RoomMessage): void {
-    // Use pre-allocated ID if present (from agentSpeak), otherwise assign next
-    if (msg.id === undefined) {
-      msg.id = this.nextMsgId++;
+    if (!msg.id || msg.id === "") {
+      msg.id = makeId(this.nextId++, msg.kind);
     }
     this.history.push(msg);
     this.emit("message", msg);
@@ -293,6 +292,7 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
       this._benchedAgents.push(agent);
 
       this.pushMessage({
+        id: "",
         timestamp: new Date(),
         agent: agent.personality.name,
         content: excuse,
@@ -310,6 +310,7 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
       this.turnsSinceSpoke.set(agent.personality.name, 3);
 
       this.pushMessage({
+        id: "",
         timestamp: new Date(),
         agent: agent.personality.name,
         content: `${agent.personality.tagline} — ${greeting}`,
@@ -343,7 +344,7 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
     const name = agent.personality.name;
     // Pre-allocate the message ID so the TUI can associate streaming
     // content with the final persisted message from the start.
-    const preallocId = this.nextMsgId++;
+    const preallocId = makeId(this.nextId++, "chat");
     this.emit("thinking", name, preallocId);
 
     try {
@@ -372,6 +373,7 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
 
       if (!content) {
         this.pushMessage({
+          id: "",
           timestamp: new Date(),
           agent: "SYSTEM",
           content: `[${name} returned an empty response]`,
@@ -395,6 +397,7 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
     } catch (err: any) {
       if (err?.name === "AbortError") return;
       this.pushMessage({
+        id: "",
         timestamp: new Date(),
         agent: "SYSTEM",
         content: `[${name} error: ${err.message}]`,
