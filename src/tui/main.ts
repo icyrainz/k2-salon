@@ -151,6 +151,14 @@ async function main() {
     await saveRoomMeta(roomName, meta);
   }
 
+  // Assign IDs to preloaded history messages that lack them (legacy transcripts).
+  // Uses a simple hash so the same message always gets the same ID for TTS caching.
+  for (let i = 0; i < preloadedHistory.length; i++) {
+    if (preloadedHistory[i].id === undefined) {
+      preloadedHistory[i].id = i;
+    }
+  }
+
   const config: RoomConfig = { ...salonConfig.room, topic, language };
   const engine = new SalonEngine(config, roster, preloadedHistory, savedRoster);
 
@@ -174,9 +182,25 @@ async function main() {
     }
   };
 
+  let activeTtsProc: ReturnType<typeof Bun.spawn> | null = null;
+  let activeTtsSendCommand: ((cmd: string) => void) | null = null;
+  let activeTtsCleanup: (() => void) | null = null;
+
   const handleUserInput = (line: string) => {
     if (line === "\x00WHO") {
       tui.handle.showWho([...engine.activeAgents]);
+    } else if (line === "\x00TTS_STOP") {
+      if (activeTtsProc) {
+        activeTtsProc.kill();
+        activeTtsCleanup?.();
+        activeTtsProc = null;
+        activeTtsSendCommand = null;
+        activeTtsCleanup = null;
+        tui.handle.setTtsActivity(null);
+      }
+    } else if (line.startsWith("\x00TTS_CMD:")) {
+      const cmd = line.slice(9);
+      activeTtsSendCommand?.(cmd);
     } else if (line.startsWith("\x00TTS:")) {
       const parts = line.slice(5).split(":");
       const msgId = parseInt(parts[0], 10);
@@ -208,8 +232,25 @@ async function main() {
       );
 
       tui.handle.setTtsActivity({ agent: agentName, color, phase: "playing" });
-      const { done } = playTts(filePath);
+      const { proc, done, sendCommand, cleanup } = playTts(filePath, (p) => {
+        tui.handle.setTtsActivity({
+          agent: agentName,
+          color,
+          phase: "playing",
+          position: p.position,
+          duration: p.duration,
+          speed: p.speed,
+          paused: p.paused,
+        });
+      });
+      activeTtsProc = proc;
+      activeTtsSendCommand = sendCommand;
+      activeTtsCleanup = cleanup;
       await done;
+      cleanup();
+      activeTtsProc = null;
+      activeTtsSendCommand = null;
+      activeTtsCleanup = null;
     } catch (err: any) {
       tui.handle.pushMessage({
         timestamp: new Date(),
@@ -245,7 +286,9 @@ async function main() {
   // Subscribe to engine messages for transcript writing + TUI updates
   engine.on("message", (msg) => {
     transcript.append(msg);
-    if (msg.kind !== "chat") tui.handle.pushMessage(msg);
+    // Push ALL messages to TUI — chat messages merge their engine ID
+    // into the existing streaming placeholder (see app.tsx message handler)
+    tui.handle.pushMessage(msg);
     if (msg.kind === "join" || msg.kind === "leave") {
       tui.handle.setActiveAgents([...engine.activeAgents]);
       saveActiveRoster();

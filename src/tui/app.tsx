@@ -4,6 +4,7 @@ import TextInput from "ink-text-input";
 import type { AgentConfig, AgentColor, RoomMessage } from "../core/types.js";
 import type { SalonEngine } from "../engine/salon-engine.js";
 import { toInkColor } from "./colors.js";
+import { ttsExists } from "../engine/tts.js";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -43,6 +44,14 @@ export interface TtsActivity {
   agent: string;
   color: AgentColor;
   phase: "generating" | "playing";
+  /** Playback position in seconds */
+  position?: number;
+  /** Total duration in seconds */
+  duration?: number;
+  /** Playback speed multiplier */
+  speed?: number;
+  /** Whether playback is paused */
+  paused?: boolean;
 }
 
 // ── Header ──────────────────────────────────────────────────────────
@@ -358,9 +367,10 @@ function InputLine({ onSubmit }: InputLineProps) {
 interface TtsSelectBarProps {
   messages: DisplayMessage[];
   selectedIndex: number;
+  roomName: string;
 }
 
-function TtsSelectBar({ messages, selectedIndex }: TtsSelectBarProps) {
+function TtsSelectBar({ messages, selectedIndex, roomName }: TtsSelectBarProps) {
   const speakable = messages.filter(
     (dm) => dm.msg.kind === "chat" || dm.msg.kind === "user",
   );
@@ -379,6 +389,8 @@ function TtsSelectBar({ messages, selectedIndex }: TtsSelectBarProps) {
       ? dm.msg.content.slice(0, 80) + "..."
       : dm.msg.content;
   const inkColor = toInkColor(dm.msg.color);
+  const cached =
+    dm.msg.id !== undefined && ttsExists(roomName, dm.msg.id);
 
   return (
     <Box flexDirection="column">
@@ -387,15 +399,54 @@ function TtsSelectBar({ messages, selectedIndex }: TtsSelectBarProps) {
           {" "}
           ▶ TTS:{" "}
         </Text>
+        {cached && <Text color="green"> ● </Text>}
         <Text bold color={inkColor}>
           [{dm.msg.agent}]
         </Text>
         <Text> "{preview}"</Text>
       </Box>
       <Box>
-        <Text dimColor> [↑↓] select [Enter] play [Esc] cancel</Text>
+        <Text dimColor>
+          {" "}
+          [↑↓] select [Enter] play [Esc] cancel{" "}
+          {cached ? "(cached)" : "(will generate)"}
+        </Text>
       </Box>
     </Box>
+  );
+}
+
+// ── TTS progress bar ────────────────────────────────────────────────
+
+function fmtSecs(s: number): string {
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}:${sec.toString().padStart(2, "0")}`;
+}
+
+function TtsProgressBar({
+  position,
+  duration,
+  speed,
+  paused,
+}: {
+  position: number;
+  duration: number;
+  speed: number;
+  paused: boolean;
+}) {
+  const BAR_WIDTH = 20;
+  const ratio = duration > 0 ? Math.min(position / duration, 1) : 0;
+  const filled = Math.round(ratio * BAR_WIDTH);
+  const bar = "━".repeat(filled) + "─".repeat(BAR_WIDTH - filled);
+
+  return (
+    <Text>
+      <Text dimColor>{fmtSecs(position)}</Text>
+      <Text color={paused ? "yellow" : "cyan"}> {bar} </Text>
+      <Text dimColor>{fmtSecs(duration)}</Text>
+      {speed !== 1 && <Text dimColor> {speed.toFixed(1)}x</Text>}
+    </Text>
   );
 }
 
@@ -423,7 +474,7 @@ export interface TuiHandle {
 
 type TuiEvent =
   | { type: "message"; msg: RoomMessage }
-  | { type: "streamStart"; agent: string; color: AgentColor }
+  | { type: "streamStart"; agent: string; color: AgentColor; msgId: number }
   | { type: "streamToken"; agent: string; token: string }
   | { type: "streamDone"; agent: string }
   | { type: "setActiveAgents"; agents: readonly AgentConfig[] }
@@ -479,7 +530,7 @@ function App({
 
   // Subscribe to engine events
   useEffect(() => {
-    const onThinking = (agent: string) => {
+    const onThinking = (agent: string, msgId: number) => {
       // Finalize any previous stream
       const sr = streamingRef.current;
       if (sr !== null) {
@@ -490,13 +541,13 @@ function App({
         (a) => a.personality.name === agent,
       );
       const color: AgentColor = agentConfig?.personality.color ?? "white";
-      emitTuiEvent({ type: "streamStart", agent, color });
+      emitTuiEvent({ type: "streamStart", agent, color, msgId });
     };
 
     const onStreamToken = (agent: string, token: string) => {
       const sr = streamingRef.current;
       if (!sr || sr.agent !== agent) {
-        // Late start — create stream entry
+        // Late start — create stream entry (msgId will be merged later)
         if (sr !== null) {
           emitTuiEvent({ type: "streamDone", agent: sr.agent });
         }
@@ -504,7 +555,7 @@ function App({
           (a) => a.personality.name === agent,
         );
         const color: AgentColor = agentConfig?.personality.color ?? "white";
-        emitTuiEvent({ type: "streamStart", agent, color });
+        emitTuiEvent({ type: "streamStart", agent, color, msgId: -1 });
       }
       emitTuiEvent({ type: "streamToken", agent, token });
     };
@@ -535,12 +586,26 @@ function App({
       for (const event of events) {
         switch (event.type) {
           case "message": {
-            if (
-              event.msg.kind === "chat" &&
-              streamingRef.current &&
-              streamingRef.current.agent === event.msg.agent
-            ) {
-              break;
+            // Chat messages arrive via streaming (streamStart/Token/Done)
+            // and already have the engine's msg.id on the placeholder.
+            // Skip duplicates when the streamed placeholder already exists.
+            if (event.msg.kind === "chat") {
+              if (streamingRef.current?.agent === event.msg.agent) break;
+              // Check if a placeholder with this msg.id already exists
+              const exists = event.msg.id !== undefined;
+              if (exists) {
+                setMessages((prev) => {
+                  const found = prev.some(
+                    (dm) =>
+                      dm.msg.kind === "chat" &&
+                      dm.msg.id === event.msg.id,
+                  );
+                  if (found) return prev; // already rendered via streaming
+                  const id = nextId.current++;
+                  return [...prev, { id, msg: event.msg }];
+                });
+                break;
+              }
             }
 
             const id = nextId.current++;
@@ -551,6 +616,7 @@ function App({
           case "streamStart": {
             const id = nextId.current++;
             const placeholder: RoomMessage = {
+              id: event.msgId >= 0 ? event.msgId : undefined,
               timestamp: new Date(),
               agent: event.agent,
               content: "",
@@ -752,6 +818,23 @@ function App({
     { isActive: ttsSelectMode },
   );
 
+  // Forward keys to mpv during TTS playback; Esc/q kills the process
+  useInput(
+    (input, key) => {
+      if (key.escape || input === "q") {
+        onUserInput("\x00TTS_STOP");
+        return;
+      }
+      // Map ink key events to mpv input commands
+      if (key.leftArrow) onUserInput("\x00TTS_CMD:seek -5");
+      else if (key.rightArrow) onUserInput("\x00TTS_CMD:seek 5");
+      else if (input === "[") onUserInput("\x00TTS_CMD:multiply speed 0.9");
+      else if (input === "]") onUserInput("\x00TTS_CMD:multiply speed 1.1");
+      else if (input === " ") onUserInput("\x00TTS_CMD:cycle pause");
+    },
+    { isActive: ttsActivity?.phase === "playing" && !ttsSelectMode },
+  );
+
   const streamingDm = messages.find((dm) => dm.isStreaming);
   const settledMessages = messages.filter((dm) => !dm.isStreaming);
 
@@ -789,7 +872,11 @@ function App({
       {whoDisplay && <WhoTable agents={[...whoDisplay]} />}
 
       {ttsSelectMode && (
-        <TtsSelectBar messages={messages} selectedIndex={ttsSelectIndex} />
+        <TtsSelectBar
+          messages={messages}
+          selectedIndex={ttsSelectIndex}
+          roomName={roomName}
+        />
       )}
 
       <Box>
@@ -828,15 +915,40 @@ function App({
       )}
 
       {ttsActivity && !agentActivity && (
-        <Box>
-          <Text> </Text>
-          <Spinner active={true} />
-          <Text> </Text>
-          <Text bold color={toInkColor(ttsActivity.color)}>
-            {ttsActivity.phase === "generating"
-              ? `Generating speech for ${ttsActivity.agent}...`
-              : `Playing ${ttsActivity.agent}...`}
-          </Text>
+        <Box flexDirection="column">
+          <Box>
+            <Text> </Text>
+            {ttsActivity.phase === "generating" ? (
+              <>
+                <Spinner active={true} />
+                <Text> </Text>
+                <Text bold color={toInkColor(ttsActivity.color)}>
+                  Generating speech for {ttsActivity.agent}...
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text>{ttsActivity.paused ? "⏸" : "▶"} </Text>
+                <Text bold color={toInkColor(ttsActivity.color)}>
+                  {ttsActivity.agent}
+                </Text>
+                <Text> </Text>
+                <TtsProgressBar
+                  position={ttsActivity.position ?? 0}
+                  duration={ttsActivity.duration ?? 0}
+                  speed={ttsActivity.speed ?? 1}
+                  paused={ttsActivity.paused ?? false}
+                />
+              </>
+            )}
+          </Box>
+          {ttsActivity.phase === "playing" && (
+            <Box>
+              <Text dimColor>
+                {"  "}[←→] seek [␣] pause [[ ]] speed [Esc] stop
+              </Text>
+            </Box>
+          )}
         </Box>
       )}
 

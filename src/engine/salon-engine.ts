@@ -13,7 +13,7 @@ import { complete } from "./provider.js";
 
 interface SalonEvents {
   message: (msg: RoomMessage) => void;
-  thinking: (agent: string) => void;
+  thinking: (agent: string, msgId: number) => void;
   streamToken: (agent: string, token: string) => void;
   streamDone: (agent: string) => void;
 }
@@ -64,8 +64,18 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
     this.config = config;
 
     if (preloadedHistory) {
-      this.history = preloadedHistory.map((msg, i) => ({ ...msg, id: i }));
-      this.nextMsgId = this.history.length;
+      // Preserve existing IDs from transcripts (for TTS cache consistency).
+      // For legacy messages without IDs, use their index as a stable fallback.
+      this.history = preloadedHistory.map((msg, i) => ({
+        ...msg,
+        id: msg.id ?? i,
+      }));
+      // Start new IDs above the highest existing one to avoid collisions
+      const maxId = this.history.reduce(
+        (max, m) => Math.max(max, m.id ?? 0),
+        0,
+      );
+      this.nextMsgId = maxId + 1;
     }
 
     // Determine initial active vs benched agents
@@ -245,7 +255,10 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
   // ── Internal: push a message to history and emit ───────────────
 
   private pushMessage(msg: RoomMessage): void {
-    msg.id = this.nextMsgId++;
+    // Use pre-allocated ID if present (from agentSpeak), otherwise assign next
+    if (msg.id === undefined) {
+      msg.id = this.nextMsgId++;
+    }
     this.history.push(msg);
     this.emit("message", msg);
   }
@@ -328,7 +341,10 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
       : this.config.maxTokens;
 
     const name = agent.personality.name;
-    this.emit("thinking", name);
+    // Pre-allocate the message ID so the TUI can associate streaming
+    // content with the final persisted message from the start.
+    const preallocId = this.nextMsgId++;
+    this.emit("thinking", name, preallocId);
 
     try {
       const result = await complete(
@@ -371,6 +387,7 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
         content,
         color: agent.personality.color,
         kind: "chat",
+        id: preallocId,
       });
 
       this.lastSpeaker = name;
