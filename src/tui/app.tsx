@@ -474,7 +474,7 @@ export interface TuiHandle {
 
 type TuiEvent =
   | { type: "message"; msg: RoomMessage }
-  | { type: "streamStart"; agent: string; color: AgentColor; msgId: number }
+  | { type: "streamStart"; agent: string; color: AgentColor; msgId: string }
   | { type: "streamToken"; agent: string; token: string }
   | { type: "streamDone"; agent: string }
   | { type: "setActiveAgents"; agents: readonly AgentConfig[] }
@@ -530,7 +530,7 @@ function App({
 
   // Subscribe to engine events
   useEffect(() => {
-    const onThinking = (agent: string, msgId: number) => {
+    const onThinking = (agent: string, msgId: string) => {
       // Finalize any previous stream
       const sr = streamingRef.current;
       if (sr !== null) {
@@ -555,7 +555,7 @@ function App({
           (a) => a.personality.name === agent,
         );
         const color: AgentColor = agentConfig?.personality.color ?? "white";
-        emitTuiEvent({ type: "streamStart", agent, color, msgId: -1 });
+        emitTuiEvent({ type: "streamStart", agent, color, msgId: "" });
       }
       emitTuiEvent({ type: "streamToken", agent, token });
     };
@@ -616,7 +616,7 @@ function App({
           case "streamStart": {
             const id = nextId.current++;
             const placeholder: RoomMessage = {
-              id: event.msgId >= 0 ? event.msgId : undefined,
+              id: event.msgId || undefined,
               timestamp: new Date(),
               agent: event.agent,
               content: "",
