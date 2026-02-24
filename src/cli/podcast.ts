@@ -19,35 +19,9 @@
 import { readFile, writeFile, mkdir, rm, stat } from "fs/promises";
 import { existsSync, writeFileSync } from "fs";
 import { join } from "path";
-
-// ── OpenAI TTS voices ───────────────────────────────────────────────
-// Mapped to personalities by character feel.
-
-type TtsVoice = "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer";
-
-const VOICE_MAP: Record<string, TtsVoice> = {
-  Sage:   "onyx",     // Stoic, measured — deep and calm
-  Nova:   "nova",     // Activist, passionate — bright and warm
-  Riko:   "echo",     // Startup founder — crisp
-  DocK:   "alloy",    // Scientist, dry — matter-of-fact
-  Wren:   "fable",    // Devil's advocate — distinctive
-  Jules:  "shimmer",  // Diplomat, worldly — warm
-  Chip:   "echo",     // GenZ tech worker — energetic
-  Ora:    "nova",     // Mindfulness teacher — serene
-  YOU:    "alloy",
-};
-
-// Stable fallback for any agent not in the map
-const FALLBACK_VOICES: TtsVoice[] = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"];
-const fallbackAssigned = new Map<string, TtsVoice>();
-
-function voiceFor(agent: string): TtsVoice {
-  if (VOICE_MAP[agent]) return VOICE_MAP[agent];
-  if (!fallbackAssigned.has(agent)) {
-    fallbackAssigned.set(agent, FALLBACK_VOICES[fallbackAssigned.size % FALLBACK_VOICES.length]);
-  }
-  return fallbackAssigned.get(agent)!;
-}
+import { voiceFor } from "../core/voices.js";
+import type { TtsVoice } from "../core/voices.js";
+import { synthesiseTts } from "../engine/tts.js";
 
 // ── Parse CLI args ──────────────────────────────────────────────────
 
@@ -187,29 +161,6 @@ function parseReport(markdown: string): Segment[] {
   return segments;
 }
 
-// ── Call OpenAI TTS API ──────────────────────────────────────────────
-
-async function synthesise(text: string, voice: TtsVoice, model: string): Promise<Buffer> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OPENAI_API_KEY not set in environment");
-
-  const response = await fetch("https://api.openai.com/v1/audio/speech", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ model, input: text, voice, response_format: "mp3" }),
-  });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`OpenAI TTS ${response.status}: ${err}`);
-  }
-
-  return Buffer.from(await response.arrayBuffer());
-}
-
 // ── ffmpeg helpers ───────────────────────────────────────────────────
 
 function ffmpeg(args: string[]): void {
@@ -273,7 +224,7 @@ async function main() {
   let done = 0;
   const speechBuffers = await Promise.all(
     segments.map(async (seg, i) => {
-      const audio = await synthesise(seg.text, seg.voice, ttsModel);
+      const audio = await synthesiseTts(seg.text, seg.voice, ttsModel);
       done++;
       process.stderr.write(`  [${done}/${segments.length}] ${seg.agent} (${seg.voice})\n`);
       return { i, audio, seg };
