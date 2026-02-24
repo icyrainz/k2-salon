@@ -160,3 +160,36 @@ export interface SalonConfig {
   room: Omit<RoomConfig, "topic">;
   roster: RosterEntry[];
 }
+
+// ── Video generation ──────────────────────────────────────────────
+
+export interface VideoManifest {
+  meta: {
+    room: string;
+    topic: string;
+    language: string;
+    fromId: string;
+    toId: string;
+    totalDuration: number;
+    resolution: { w: number; h: number };
+  };
+  participants: {
+    name: string;
+    color: string;
+    voice: string;
+    tagline: string;
+  }[];
+  segments: VideoSegment[];
+}
+
+export interface VideoSegment {
+  id: string;
+  kind: "chat" | "user" | "join" | "leave" | "system";
+  agent: string;
+  text: string;
+  audioFile?: string;
+  startTime: number;
+  endTime: number;
+  duration: number;
+  pauseAfter: number;
+}
