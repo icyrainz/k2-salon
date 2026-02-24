@@ -260,7 +260,7 @@ export function parseSessionMarkdown(content: string): RoomMessage[] {
       else if (agent === "SYSTEM") kind = "system";
 
       messages.push({
-        id: idStr ?? "",
+        ...(idStr ? { id: idStr } : {}),
         timestamp: new Date(),
         agent,
         content: content.trim(),
@@ -277,7 +277,7 @@ export function parseSessionMarkdown(content: string): RoomMessage[] {
     if (chatMatch) {
       const [, agent, _time, idStr, content] = chatMatch;
       messages.push({
-        id: idStr ?? "",
+        ...(idStr ? { id: idStr } : {}),
         timestamp: new Date(),
         agent,
         content: content.trim(),
@@ -314,7 +314,6 @@ export function parseSeedToMessages(seedContent: string): RoomMessage[] {
       const body = trimmed.replace(/^## User\s*\n*/, "").trim();
       if (body) {
         messages.push({
-          id: "",
           timestamp: new Date(),
           agent: "YOU",
           content: body,
@@ -333,7 +332,6 @@ export function parseSeedToMessages(seedContent: string): RoomMessage[] {
       const body = assistantMatch[2].trim();
       if (body) {
         messages.push({
-          id: "",
           timestamp: new Date(),
           agent: "PRIOR",
           content: body,

@@ -14,9 +14,8 @@ import {
 } from "./persist.js";
 import type { RoomMessage } from "../core/types.js";
 
-function makeMsg(overrides: Partial<RoomMessage> & { id?: string }): RoomMessage {
+function makeMsg(overrides: Partial<RoomMessage>): RoomMessage {
   return {
-    id: "",
     timestamp: new Date("2025-01-15T14:30:00Z"),
     agent: "TestBot",
     content: "Hello world",

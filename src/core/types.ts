@@ -82,7 +82,7 @@ export interface AgentConfig {
 
 export interface RoomMessage {
   /** Message ID: "NNNN-m" (chat/user) or "NNNN-e" (join/leave/system) */
-  id: string;
+  id?: string;
   timestamp: Date;
   agent: string; // personality name, or "SYSTEM" / "YOU"
   content: string;

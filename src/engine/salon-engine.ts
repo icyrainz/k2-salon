@@ -67,7 +67,7 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
     if (preloadedHistory) {
       this.history = [...preloadedHistory];
       const maxSeq = this.history.reduce(
-        (max, m) => Math.max(max, parseId(m.id)),
+        (max, m) => Math.max(max, parseId(m.id ?? "")),
         -1,
       );
       this.nextId = maxSeq + 1;
@@ -107,7 +107,6 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
     this._running = true;
 
     this.pushMessage({
-      id: "",
       timestamp: new Date(),
       agent: "SYSTEM",
       content: `Topic: "${this.config.topic}"`,
@@ -117,7 +116,6 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
 
     for (const agent of this._activeAgents) {
       this.pushMessage({
-        id: "",
         timestamp: new Date(),
         agent: agent.personality.name,
         content: agent.personality.tagline,
@@ -168,7 +166,6 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
   shuffle(): void {
     for (const agent of this._activeAgents) {
       this.pushMessage({
-        id: "",
         timestamp: new Date(),
         agent: agent.personality.name,
         content: randomLeaveExcuse(),
@@ -198,7 +195,6 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
 
     for (const agent of this._activeAgents) {
       this.pushMessage({
-        id: "",
         timestamp: new Date(),
         agent: agent.personality.name,
         content: `${agent.personality.tagline} — ${randomJoinGreeting()}`,
@@ -255,7 +251,7 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
   // ── Internal: push a message to history and emit ───────────────
 
   private pushMessage(msg: RoomMessage): void {
-    if (!msg.id || msg.id === "") {
+    if (!msg.id) {
       msg.id = makeId(this.nextId++, msg.kind);
     }
     this.history.push(msg);
@@ -292,7 +288,6 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
       this._benchedAgents.push(agent);
 
       this.pushMessage({
-        id: "",
         timestamp: new Date(),
         agent: agent.personality.name,
         content: excuse,
@@ -310,7 +305,6 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
       this.turnsSinceSpoke.set(agent.personality.name, 3);
 
       this.pushMessage({
-        id: "",
         timestamp: new Date(),
         agent: agent.personality.name,
         content: `${agent.personality.tagline} — ${greeting}`,
@@ -397,7 +391,6 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
     } catch (err: any) {
       if (err?.name === "AbortError") return;
       this.pushMessage({
-        id: "",
         timestamp: new Date(),
         agent: "SYSTEM",
         content: `[${name} error: ${err.message}]`,
