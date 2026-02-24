@@ -68,6 +68,7 @@ export interface AgentConfig {
 // ── Room ────────────────────────────────────────────────────────────
 
 export interface RoomMessage {
+  /** Sequential message ID assigned by SalonEngine */
   id?: number;
   timestamp: Date;
   agent: string; // personality name, or "SYSTEM" / "YOU"

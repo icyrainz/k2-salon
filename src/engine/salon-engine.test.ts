@@ -107,6 +107,28 @@ describe("SalonEngine.open", () => {
     const joins = messages.filter(m => m.kind === "join");
     expect(joins.length).toBe(engine.activeAgents.length);
   });
+
+  it("assigns sequential IDs to messages", () => {
+    const agents = [makeAgent("A"), makeAgent("B"), makeAgent("C")];
+    const engine = new SalonEngine(defaultConfig, agents);
+
+    const messages: RoomMessage[] = [];
+    engine.on("message", msg => messages.push(msg));
+
+    engine.open();
+
+    // All messages should have IDs
+    for (const msg of messages) {
+      expect(msg.id).toBeDefined();
+      expect(typeof msg.id).toBe("number");
+    }
+
+    // IDs should be sequential starting from 0
+    const ids = messages.map(m => m.id!);
+    for (let i = 1; i < ids.length; i++) {
+      expect(ids[i]).toBe(ids[i - 1] + 1);
+    }
+  });
 });
 
 describe("SalonEngine.step", () => {
@@ -278,5 +300,24 @@ describe("SalonEngine.stop", () => {
     engine.stop();
     expect(engine.running).toBe(false);
     expect(engine.signal.aborted).toBe(true);
+  });
+});
+
+describe("SalonEngine message IDs with preloaded history", () => {
+  it("assigns IDs to preloaded history and continues sequence", () => {
+    const history: RoomMessage[] = [
+      { timestamp: new Date(), agent: "A", content: "Old msg 1", color: "cyan", kind: "chat" },
+      { timestamp: new Date(), agent: "B", content: "Old msg 2", color: "cyan", kind: "chat" },
+    ];
+    const agents = [makeAgent("A"), makeAgent("B"), makeAgent("C")];
+    const engine = new SalonEngine(defaultConfig, agents, history);
+
+    const messages: RoomMessage[] = [];
+    engine.on("message", msg => messages.push(msg));
+    engine.open();
+
+    // New messages should continue from where preloaded left off
+    // Preloaded: 0, 1 → new messages start at 2
+    expect(messages[0].id).toBe(2);
   });
 });

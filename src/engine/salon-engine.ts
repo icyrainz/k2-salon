@@ -36,6 +36,7 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
   private turnsSinceSpoke = new Map<string, number>();
   private _running = false;
   private abortController = new AbortController();
+  private nextMsgId = 0;
 
   get activeAgents(): readonly AgentConfig[] { return this._activeAgents; }
   get benchedAgents(): readonly AgentConfig[] { return this._benchedAgents; }
@@ -52,7 +53,8 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
     this.config = config;
 
     if (preloadedHistory) {
-      this.history = [...preloadedHistory];
+      this.history = preloadedHistory.map((msg, i) => ({ ...msg, id: i }));
+      this.nextMsgId = this.history.length;
     }
 
     // Determine initial active vs benched agents
@@ -227,6 +229,7 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
   // ── Internal: push a message to history and emit ───────────────
 
   private pushMessage(msg: RoomMessage): void {
+    msg.id = this.nextMsgId++;
     this.history.push(msg);
     this.emit("message", msg);
   }
