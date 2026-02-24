@@ -9,11 +9,11 @@ const ROOMS_DIR = "rooms";
 
 // ── Path helpers ───────────────────────────────────────────────────
 
-export function ttsPath(roomName: string, messageId: number): string {
-  return join(ROOMS_DIR, roomName, "tts", `msg-${messageId}.mp3`);
+export function ttsPath(roomName: string, messageId: string): string {
+  return join(ROOMS_DIR, roomName, "tts", `${messageId}.mp3`);
 }
 
-export function ttsExists(roomName: string, messageId: number): boolean {
+export function ttsExists(roomName: string, messageId: string): boolean {
   return existsSync(ttsPath(roomName, messageId));
 }
 
@@ -48,7 +48,7 @@ export async function synthesiseTts(
 
 export async function generateAndCacheTts(
   roomName: string,
-  messageId: number,
+  messageId: string,
   text: string,
   agentName: string,
 ): Promise<string> {
