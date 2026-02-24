@@ -27,35 +27,45 @@ function makeMsg(overrides: Partial<RoomMessage>): RoomMessage {
 
 describe("formatMessageToMarkdown", () => {
   it("formats chat messages", () => {
-    const md = formatMessageToMarkdown(makeMsg({ kind: "chat", agent: "Sage" }));
+    const md = formatMessageToMarkdown(
+      makeMsg({ kind: "chat", agent: "Sage" }),
+    );
     expect(md).toContain("**Sage**");
     expect(md).toContain("Hello world");
     expect(md).not.toMatch(/^>/); // not a blockquote
   });
 
   it("formats system messages as blockquotes", () => {
-    const md = formatMessageToMarkdown(makeMsg({ kind: "system", agent: "SYSTEM", content: "Topic: AI" }));
+    const md = formatMessageToMarkdown(
+      makeMsg({ kind: "system", agent: "SYSTEM", content: "Topic: AI" }),
+    );
     expect(md).toMatch(/^>/);
     expect(md).toContain("**SYSTEM**");
     expect(md).toContain("Topic: AI");
   });
 
   it("formats join messages with [join] tag", () => {
-    const md = formatMessageToMarkdown(makeMsg({ kind: "join", agent: "Riko", content: "hey" }));
+    const md = formatMessageToMarkdown(
+      makeMsg({ kind: "join", agent: "Riko", content: "hey" }),
+    );
     expect(md).toMatch(/^>/);
     expect(md).toContain("[join]");
     expect(md).toContain("**Riko**");
   });
 
   it("formats leave messages with [leave] tag", () => {
-    const md = formatMessageToMarkdown(makeMsg({ kind: "leave", agent: "Nova", content: "bye" }));
+    const md = formatMessageToMarkdown(
+      makeMsg({ kind: "leave", agent: "Nova", content: "bye" }),
+    );
     expect(md).toMatch(/^>/);
     expect(md).toContain("[leave]");
     expect(md).toContain("**Nova**");
   });
 
   it("formats user messages", () => {
-    const md = formatMessageToMarkdown(makeMsg({ kind: "user", agent: "YOU", content: "My thought" }));
+    const md = formatMessageToMarkdown(
+      makeMsg({ kind: "user", agent: "YOU", content: "My thought" }),
+    );
     expect(md).toContain("**YOU**");
     expect(md).toContain("My thought");
     expect(md).not.toMatch(/^>/); // not a blockquote
@@ -67,13 +77,17 @@ describe("formatMessageToMarkdown", () => {
   });
 
   it("includes message ID when present", () => {
-    const md = formatMessageToMarkdown(makeMsg({ kind: "chat", agent: "Sage", id: 42 }));
+    const md = formatMessageToMarkdown(
+      makeMsg({ kind: "chat", agent: "Sage", id: 42 }),
+    );
     expect(md).toContain("#42");
     expect(md).toContain("**Sage**");
   });
 
   it("omits message ID when not present", () => {
-    const md = formatMessageToMarkdown(makeMsg({ kind: "chat", agent: "Sage" }));
+    const md = formatMessageToMarkdown(
+      makeMsg({ kind: "chat", agent: "Sage" }),
+    );
     expect(md).not.toContain("#");
   });
 });
@@ -147,7 +161,11 @@ Third line`;
   });
 
   it("round-trips with formatMessageToMarkdown for chat", () => {
-    const original = makeMsg({ kind: "chat", agent: "Sage", content: "Round trip test" });
+    const original = makeMsg({
+      kind: "chat",
+      agent: "Sage",
+      content: "Round trip test",
+    });
     const md = formatMessageToMarkdown(original);
     const parsed = parseSessionMarkdown(md);
     expect(parsed).toHaveLength(1);
@@ -157,7 +175,11 @@ Third line`;
   });
 
   it("round-trips with formatMessageToMarkdown for system", () => {
-    const original = makeMsg({ kind: "system", agent: "SYSTEM", content: "Topic: Test" });
+    const original = makeMsg({
+      kind: "system",
+      agent: "SYSTEM",
+      content: "Topic: Test",
+    });
     const md = formatMessageToMarkdown(original);
     const parsed = parseSessionMarkdown(md);
     expect(parsed).toHaveLength(1);
@@ -187,7 +209,12 @@ Third line`;
   });
 
   it("round-trips with message IDs", () => {
-    const original = makeMsg({ kind: "chat", agent: "Sage", content: "ID test", id: 7 });
+    const original = makeMsg({
+      kind: "chat",
+      agent: "Sage",
+      content: "ID test",
+      id: 7,
+    });
     const md = formatMessageToMarkdown(original);
     const parsed = parseSessionMarkdown(md);
     expect(parsed).toHaveLength(1);
@@ -259,7 +286,10 @@ describe("TranscriptWriter", () => {
   let originalCwd: string;
 
   beforeEach(async () => {
-    tmpDir = join(tmpdir(), `k2-persist-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    tmpDir = join(
+      tmpdir(),
+      `k2-persist-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
     await mkdir(join(tmpDir, "rooms", "test-room"), { recursive: true });
     originalCwd = process.cwd();
     process.chdir(tmpDir);
@@ -275,7 +305,9 @@ describe("TranscriptWriter", () => {
     await writer.init(["Sage", "Riko"]);
 
     // Append a chat message (substantive — triggers file creation)
-    await writer.append(makeMsg({ kind: "chat", agent: "Sage", content: "First message" }));
+    await writer.append(
+      makeMsg({ kind: "chat", agent: "Sage", content: "First message" }),
+    );
 
     const filePath = join(tmpDir, "rooms", "test-room", "001-session.md");
     expect(existsSync(filePath)).toBe(true);
@@ -296,14 +328,20 @@ describe("TranscriptWriter", () => {
     await writer.init(["Sage"]);
 
     // System and join messages should be buffered
-    await writer.append(makeMsg({ kind: "system", agent: "SYSTEM", content: "Topic set" }));
-    await writer.append(makeMsg({ kind: "join", agent: "Sage", content: "joined" }));
+    await writer.append(
+      makeMsg({ kind: "system", agent: "SYSTEM", content: "Topic set" }),
+    );
+    await writer.append(
+      makeMsg({ kind: "join", agent: "Sage", content: "joined" }),
+    );
 
     const filePath = join(tmpDir, "rooms", "test-room", "001-session.md");
     expect(existsSync(filePath)).toBe(false); // not created yet
 
     // First chat message triggers flush
-    await writer.append(makeMsg({ kind: "chat", agent: "Sage", content: "Hello!" }));
+    await writer.append(
+      makeMsg({ kind: "chat", agent: "Sage", content: "Hello!" }),
+    );
     expect(existsSync(filePath)).toBe(true);
 
     const content = await readFile(filePath, "utf-8");
@@ -318,7 +356,10 @@ describe("nextSessionNumber", () => {
   let originalCwd: string;
 
   beforeEach(async () => {
-    tmpDir = join(tmpdir(), `k2-session-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    tmpDir = join(
+      tmpdir(),
+      `k2-session-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
     await mkdir(join(tmpDir, "rooms"), { recursive: true });
     originalCwd = process.cwd();
     process.chdir(tmpDir);
@@ -349,7 +390,10 @@ describe("loadRoomMeta / saveRoomMeta", () => {
   let originalCwd: string;
 
   beforeEach(async () => {
-    tmpDir = join(tmpdir(), `k2-meta-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    tmpDir = join(
+      tmpdir(),
+      `k2-meta-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
     await mkdir(join(tmpDir, "rooms"), { recursive: true });
     originalCwd = process.cwd();
     process.chdir(tmpDir);

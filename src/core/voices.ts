@@ -1,13 +1,7 @@
 // ── OpenAI TTS voice mapping ───────────────────────────────────────
 // Shared between the TTS engine and the podcast CLI.
 
-export type TtsVoice =
-  | "alloy"
-  | "echo"
-  | "fable"
-  | "onyx"
-  | "nova"
-  | "shimmer";
+export type TtsVoice = "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer";
 
 export const VOICE_MAP: Record<string, TtsVoice> = {
   Sage: "onyx",

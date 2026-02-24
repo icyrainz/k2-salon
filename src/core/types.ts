@@ -1,9 +1,22 @@
 // ── Core types for k2-salon ─────────────────────────────────────────
 
 export type AgentColor =
-  | "black" | "red" | "green" | "yellow" | "blue" | "magenta" | "cyan" | "white"
-  | "gray" | "redBright" | "greenBright" | "yellowBright" | "blueBright"
-  | "magentaBright" | "cyanBright" | "whiteBright";
+  | "black"
+  | "red"
+  | "green"
+  | "yellow"
+  | "blue"
+  | "magenta"
+  | "cyan"
+  | "white"
+  | "gray"
+  | "redBright"
+  | "greenBright"
+  | "yellowBright"
+  | "blueBright"
+  | "magentaBright"
+  | "cyanBright"
+  | "whiteBright";
 
 export type ProviderKind = "openrouter" | "ollama" | "openai-compat";
 

@@ -1,7 +1,10 @@
 import { TypedEmitter } from "tiny-typed-emitter";
 import type { AgentConfig, RoomConfig, RoomMessage } from "../core/types.js";
 import { buildMessages } from "../core/personality.js";
-import { getSpeakerCandidates, peekNextSpeakerCandidates } from "../core/speaker.js";
+import {
+  getSpeakerCandidates,
+  peekNextSpeakerCandidates,
+} from "../core/speaker.js";
 import { evaluateChurn } from "../core/churn.js";
 import { randomJoinGreeting, randomLeaveExcuse } from "../core/roster.js";
 import { complete } from "./provider.js";
@@ -38,10 +41,18 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
   private abortController = new AbortController();
   private nextMsgId = 0;
 
-  get activeAgents(): readonly AgentConfig[] { return this._activeAgents; }
-  get benchedAgents(): readonly AgentConfig[] { return this._benchedAgents; }
-  get running(): boolean { return this._running; }
-  get signal(): AbortSignal { return this.abortController.signal; }
+  get activeAgents(): readonly AgentConfig[] {
+    return this._activeAgents;
+  }
+  get benchedAgents(): readonly AgentConfig[] {
+    return this._benchedAgents;
+  }
+  get running(): boolean {
+    return this._running;
+  }
+  get signal(): AbortSignal {
+    return this.abortController.signal;
+  }
 
   constructor(
     config: RoomConfig,
@@ -61,9 +72,11 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
     if (preferredRoster && preferredRoster.length > 0) {
       const nameSet = new Set(preferredRoster);
       this._activeAgents = preferredRoster
-        .map(n => allAgents.find(a => a.personality.name === n))
+        .map((n) => allAgents.find((a) => a.personality.name === n))
         .filter((a): a is AgentConfig => a !== undefined);
-      this._benchedAgents = allAgents.filter(a => !nameSet.has(a.personality.name));
+      this._benchedAgents = allAgents.filter(
+        (a) => !nameSet.has(a.personality.name),
+      );
     } else {
       const initialCount = Math.min(
         config.maxAgents,
@@ -71,10 +84,10 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
       );
 
       const priorityAgents = [...allAgents]
-        .filter(a => a.priority !== undefined)
+        .filter((a) => a.priority !== undefined)
         .sort((a, b) => a.priority! - b.priority!);
       const normalAgents = [...allAgents]
-        .filter(a => a.priority === undefined)
+        .filter((a) => a.priority === undefined)
         .sort(() => Math.random() - 0.5);
 
       const ordered = [...priorityAgents, ...normalAgents];
@@ -163,10 +176,10 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
     );
 
     const priorityAgents = [...allAgents]
-      .filter(a => a.priority !== undefined)
+      .filter((a) => a.priority !== undefined)
       .sort((a, b) => a.priority! - b.priority!);
     const normalAgents = [...allAgents]
-      .filter(a => a.priority === undefined)
+      .filter((a) => a.priority === undefined)
       .sort(() => Math.random() - 0.5);
 
     const ordered = [...priorityAgents, ...normalAgents];
@@ -220,7 +233,10 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
       const timer = setTimeout(resolve, ms);
       this.abortController.signal.addEventListener(
         "abort",
-        () => { clearTimeout(timer); resolve(); },
+        () => {
+          clearTimeout(timer);
+          resolve();
+        },
         { once: true },
       );
     });
@@ -259,7 +275,7 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
     if (decision.leave) {
       const { agent, excuse } = decision.leave;
       this._activeAgents = this._activeAgents.filter(
-        a => a.personality.name !== agent.personality.name,
+        (a) => a.personality.name !== agent.personality.name,
       );
       this._benchedAgents.push(agent);
 
@@ -275,7 +291,7 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
     if (decision.join) {
       const { agent, greeting } = decision.join;
       this._benchedAgents = this._benchedAgents.filter(
-        a => a.personality.name !== agent.personality.name,
+        (a) => a.personality.name !== agent.personality.name,
       );
       this._activeAgents.push(agent);
       this.turnsSinceSpoke.set(agent.personality.name, 3);
@@ -294,7 +310,10 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
 
   // ── Internal: generate a single agent response ────────────────
 
-  private async agentSpeak(agent: AgentConfig, verbose: boolean): Promise<void> {
+  private async agentSpeak(
+    agent: AgentConfig,
+    verbose: boolean,
+  ): Promise<void> {
     const messages = buildMessages(
       agent,
       this.config.topic,
@@ -314,12 +333,21 @@ export class SalonEngine extends TypedEmitter<SalonEvents> {
     try {
       const result = await complete(
         agent.provider,
-        { model: agent.model, messages, temperature: agent.temperature ?? 0.9, maxTokens },
+        {
+          model: agent.model,
+          messages,
+          temperature: agent.temperature ?? 0.9,
+          maxTokens,
+        },
         {
           onToken: (token) => this.emit("streamToken", name, token),
           onDone: () => this.emit("streamDone", name),
         },
-        { baseUrl: agent.baseUrl, apiKey: agent.apiKey, signal: this.abortController.signal },
+        {
+          baseUrl: agent.baseUrl,
+          apiKey: agent.apiKey,
+          signal: this.abortController.signal,
+        },
       );
 
       const raw = result.content.trim();

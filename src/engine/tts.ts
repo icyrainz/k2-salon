@@ -67,9 +67,10 @@ export async function generateAndCacheTts(
 
 // ── Playback via mpv ───────────────────────────────────────────────
 
-export function playTts(
-  filePath: string,
-): { proc: ReturnType<typeof Bun.spawn>; done: Promise<void> } {
+export function playTts(filePath: string): {
+  proc: ReturnType<typeof Bun.spawn>;
+  done: Promise<void>;
+} {
   const proc = Bun.spawn(["mpv", "--no-video", filePath], {
     stdout: "ignore",
     stderr: "ignore",

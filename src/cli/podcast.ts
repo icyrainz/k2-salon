@@ -62,7 +62,10 @@ function parseReport(markdown: string): Segment[] {
   let topic = "";
   for (const line of lines) {
     const m = line.match(/^\*\*Topic:\*\*\s+(.+)/);
-    if (m) { topic = m[1].trim(); break; }
+    if (m) {
+      topic = m[1].trim();
+      break;
+    }
   }
 
   // Intro narration
@@ -85,7 +88,11 @@ function parseReport(markdown: string): Segment[] {
       const agent = chatHeader[1].trim();
       const bodyLines: string[] = [];
       i++;
-      while (i < lines.length && !lines[i].startsWith("### ") && lines[i] !== "---") {
+      while (
+        i < lines.length &&
+        !lines[i].startsWith("### ") &&
+        lines[i] !== "---"
+      ) {
         bodyLines.push(lines[i]);
         i++;
       }
@@ -131,7 +138,11 @@ function parseReport(markdown: string): Segment[] {
     if (line.startsWith("**[YOU]**")) {
       const bodyLines: string[] = [];
       i++;
-      while (i < lines.length && lines[i] !== "" && !lines[i].startsWith("###")) {
+      while (
+        i < lines.length &&
+        lines[i] !== "" &&
+        !lines[i].startsWith("###")
+      ) {
         bodyLines.push(lines[i]);
         i++;
       }
@@ -166,25 +177,46 @@ function parseReport(markdown: string): Segment[] {
 function ffmpeg(args: string[]): void {
   const result = Bun.spawnSync(["ffmpeg", "-y", ...args], { stderr: "pipe" });
   if (result.exitCode !== 0) {
-    throw new Error(`ffmpeg failed:\n${result.stderr ? new TextDecoder().decode(result.stderr) : "(no output)"}`);
+    throw new Error(
+      `ffmpeg failed:\n${result.stderr ? new TextDecoder().decode(result.stderr) : "(no output)"}`,
+    );
   }
 }
 
 function generateSilence(ms: number, outPath: string): void {
   ffmpeg([
-    "-f", "lavfi",
-    "-i", "anullsrc=r=24000:cl=mono",
-    "-t", (ms / 1000).toFixed(3),
-    "-q:a", "9",
-    "-acodec", "libmp3lame",
+    "-f",
+    "lavfi",
+    "-i",
+    "anullsrc=r=24000:cl=mono",
+    "-t",
+    (ms / 1000).toFixed(3),
+    "-q:a",
+    "9",
+    "-acodec",
+    "libmp3lame",
     outPath,
   ]);
 }
 
-function concatenateMp3s(inputPaths: string[], outputPath: string, tmpDir: string): void {
+function concatenateMp3s(
+  inputPaths: string[],
+  outputPath: string,
+  tmpDir: string,
+): void {
   const listPath = join(tmpDir, "concat.txt");
-  writeFileSync(listPath, inputPaths.map(p => `file '${p}'`).join("\n"));
-  ffmpeg(["-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", outputPath]);
+  writeFileSync(listPath, inputPaths.map((p) => `file '${p}'`).join("\n"));
+  ffmpeg([
+    "-f",
+    "concat",
+    "-safe",
+    "0",
+    "-i",
+    listPath,
+    "-c",
+    "copy",
+    outputPath,
+  ]);
 }
 
 // ── Main ─────────────────────────────────────────────────────────────
@@ -205,7 +237,9 @@ async function main() {
   }
 
   if (!markdown.trim()) {
-    process.stderr.write("Error: no input — pipe a simulation report or pass a file path.\n");
+    process.stderr.write(
+      "Error: no input — pipe a simulation report or pass a file path.\n",
+    );
     process.exit(1);
   }
 
@@ -218,7 +252,9 @@ async function main() {
   const tmpDir = join("/tmp", `k2-podcast-${Date.now()}`);
   await mkdir(tmpDir, { recursive: true });
 
-  process.stderr.write(`\nGenerating podcast — ${segments.length} segments in parallel, model: ${ttsModel}\n\n`);
+  process.stderr.write(
+    `\nGenerating podcast — ${segments.length} segments in parallel, model: ${ttsModel}\n\n`,
+  );
 
   // Synthesise all segments in parallel — much faster than sequential
   let done = 0;
@@ -226,7 +262,9 @@ async function main() {
     segments.map(async (seg, i) => {
       const audio = await synthesiseTts(seg.text, seg.voice, ttsModel);
       done++;
-      process.stderr.write(`  [${done}/${segments.length}] ${seg.agent} (${seg.voice})\n`);
+      process.stderr.write(
+        `  [${done}/${segments.length}] ${seg.agent} (${seg.voice})\n`,
+      );
       return { i, audio, seg };
     }),
   );
@@ -251,7 +289,9 @@ async function main() {
   await rm(tmpDir, { recursive: true, force: true });
 
   const { size } = await stat(outputFile);
-  process.stderr.write(`Done!  ${outputFile}  (${(size / 1024 / 1024).toFixed(1)} MB)\n`);
+  process.stderr.write(
+    `Done!  ${outputFile}  (${(size / 1024 / 1024).toFixed(1)} MB)\n`,
+  );
 }
 
 main().catch((err) => {

@@ -1,5 +1,18 @@
-import { describe, expect, it, beforeEach, afterEach, jest, mock } from "bun:test";
-import type { AgentConfig, Personality, RoomConfig, RoomMessage } from "../core/types.js";
+import {
+  describe,
+  expect,
+  it,
+  beforeEach,
+  afterEach,
+  jest,
+  mock,
+} from "bun:test";
+import type {
+  AgentConfig,
+  Personality,
+  RoomConfig,
+  RoomMessage,
+} from "../core/types.js";
 
 // Mock the provider module before importing SalonEngine
 mock.module("./provider.js", () => ({
@@ -14,7 +27,10 @@ const { SalonEngine } = await import("./salon-engine.js");
 const { complete } = await import("./provider.js");
 const mockedComplete = complete as ReturnType<typeof jest.fn>;
 
-function makeAgent(name: string, opts: { priority?: number; chattiness?: number } = {}): AgentConfig {
+function makeAgent(
+  name: string,
+  opts: { priority?: number; chattiness?: number } = {},
+): AgentConfig {
   return {
     personality: {
       name,
@@ -45,13 +61,23 @@ const defaultConfig: RoomConfig = {
 
 describe("SalonEngine constructor", () => {
   it("splits agents into active and benched based on maxAgents", () => {
-    const agents = [makeAgent("A"), makeAgent("B"), makeAgent("C"), makeAgent("D"), makeAgent("E")];
+    const agents = [
+      makeAgent("A"),
+      makeAgent("B"),
+      makeAgent("C"),
+      makeAgent("D"),
+      makeAgent("E"),
+    ];
     const engine = new SalonEngine(defaultConfig, agents);
     // initialCount = min(4, max(2, floor(5*0.5))) = min(4, max(2, 2)) = 2
     // But priority agents come first, then random normal agents
     expect(engine.activeAgents.length + engine.benchedAgents.length).toBe(5);
-    expect(engine.activeAgents.length).toBeGreaterThanOrEqual(defaultConfig.minAgents);
-    expect(engine.activeAgents.length).toBeLessThanOrEqual(defaultConfig.maxAgents);
+    expect(engine.activeAgents.length).toBeGreaterThanOrEqual(
+      defaultConfig.minAgents,
+    );
+    expect(engine.activeAgents.length).toBeLessThanOrEqual(
+      defaultConfig.maxAgents,
+    );
   });
 
   it("priority agents always placed in active set", () => {
@@ -63,22 +89,36 @@ describe("SalonEngine constructor", () => {
       makeAgent("Normal3"),
     ];
     const engine = new SalonEngine(defaultConfig, agents);
-    const activeNames = engine.activeAgents.map(a => a.personality.name);
+    const activeNames = engine.activeAgents.map((a) => a.personality.name);
     expect(activeNames).toContain("Priority1");
     expect(activeNames).toContain("Priority2");
   });
 
   it("respects preferredRoster", () => {
-    const agents = [makeAgent("A"), makeAgent("B"), makeAgent("C"), makeAgent("D")];
-    const engine = new SalonEngine(defaultConfig, agents, undefined, ["B", "D"]);
-    const activeNames = engine.activeAgents.map(a => a.personality.name);
+    const agents = [
+      makeAgent("A"),
+      makeAgent("B"),
+      makeAgent("C"),
+      makeAgent("D"),
+    ];
+    const engine = new SalonEngine(defaultConfig, agents, undefined, [
+      "B",
+      "D",
+    ]);
+    const activeNames = engine.activeAgents.map((a) => a.personality.name);
     expect(activeNames).toEqual(["B", "D"]);
     expect(engine.benchedAgents.length).toBe(2);
   });
 
   it("loads preloaded history", () => {
     const history: RoomMessage[] = [
-      { timestamp: new Date(), agent: "A", content: "Hello", color: "cyan", kind: "chat" },
+      {
+        timestamp: new Date(),
+        agent: "A",
+        content: "Hello",
+        color: "cyan",
+        kind: "chat",
+      },
     ];
     const agents = [makeAgent("A"), makeAgent("B"), makeAgent("C")];
     const engine = new SalonEngine(defaultConfig, agents, history);
@@ -93,7 +133,7 @@ describe("SalonEngine.open", () => {
     const engine = new SalonEngine(defaultConfig, agents);
 
     const messages: RoomMessage[] = [];
-    engine.on("message", msg => messages.push(msg));
+    engine.on("message", (msg) => messages.push(msg));
 
     engine.open();
 
@@ -104,7 +144,7 @@ describe("SalonEngine.open", () => {
     expect(messages[0].content).toContain("Test topic");
 
     // Remaining messages should be join messages for active agents
-    const joins = messages.filter(m => m.kind === "join");
+    const joins = messages.filter((m) => m.kind === "join");
     expect(joins.length).toBe(engine.activeAgents.length);
   });
 
@@ -113,7 +153,7 @@ describe("SalonEngine.open", () => {
     const engine = new SalonEngine(defaultConfig, agents);
 
     const messages: RoomMessage[] = [];
-    engine.on("message", msg => messages.push(msg));
+    engine.on("message", (msg) => messages.push(msg));
 
     engine.open();
 
@@ -124,7 +164,7 @@ describe("SalonEngine.open", () => {
     }
 
     // IDs should be sequential starting from 0
-    const ids = messages.map(m => m.id!);
+    const ids = messages.map((m) => m.id!);
     for (let i = 1; i < ids.length; i++) {
       expect(ids[i]).toBe(ids[i - 1] + 1);
     }
@@ -137,7 +177,10 @@ describe("SalonEngine.step", () => {
   beforeEach(() => {
     randomSpy = jest.spyOn(Math, "random").mockReturnValue(0.1);
     mockedComplete.mockClear();
-    mockedComplete.mockResolvedValue({ content: "Mocked response", model: "test" });
+    mockedComplete.mockResolvedValue({
+      content: "Mocked response",
+      model: "test",
+    });
   });
 
   afterEach(() => {
@@ -150,14 +193,14 @@ describe("SalonEngine.step", () => {
     engine.open();
 
     const messages: RoomMessage[] = [];
-    engine.on("message", msg => messages.push(msg));
+    engine.on("message", (msg) => messages.push(msg));
 
     const speaker = await engine.step();
     expect(speaker).not.toBeNull();
     expect(mockedComplete).toHaveBeenCalledTimes(1);
 
     // Should have emitted a chat message with the mocked response
-    const chatMsgs = messages.filter(m => m.kind === "chat");
+    const chatMsgs = messages.filter((m) => m.kind === "chat");
     expect(chatMsgs.length).toBe(1);
     expect(chatMsgs[0].content).toBe("Mocked response");
   });
@@ -204,12 +247,14 @@ describe("SalonEngine.step", () => {
     engine.open();
 
     const messages: RoomMessage[] = [];
-    engine.on("message", msg => messages.push(msg));
+    engine.on("message", (msg) => messages.push(msg));
 
     await engine.step();
 
     // Should emit a system error message
-    const errors = messages.filter(m => m.kind === "system" && m.content.includes("error"));
+    const errors = messages.filter(
+      (m) => m.kind === "system" && m.content.includes("error"),
+    );
     expect(errors.length).toBe(1);
     expect(errors[0].content).toContain("API rate limit");
   });
@@ -222,28 +267,36 @@ describe("SalonEngine.step", () => {
     engine.open();
 
     const messages: RoomMessage[] = [];
-    engine.on("message", msg => messages.push(msg));
+    engine.on("message", (msg) => messages.push(msg));
 
     await engine.step();
 
-    const errors = messages.filter(m => m.kind === "system" && m.content.includes("empty response"));
+    const errors = messages.filter(
+      (m) => m.kind === "system" && m.content.includes("empty response"),
+    );
     expect(errors.length).toBe(1);
   });
 });
 
 describe("SalonEngine.shuffle", () => {
   it("emits leave/join messages and resets state", () => {
-    const agents = [makeAgent("A"), makeAgent("B"), makeAgent("C"), makeAgent("D"), makeAgent("E")];
+    const agents = [
+      makeAgent("A"),
+      makeAgent("B"),
+      makeAgent("C"),
+      makeAgent("D"),
+      makeAgent("E"),
+    ];
     const engine = new SalonEngine(defaultConfig, agents);
     engine.open();
 
     const messages: RoomMessage[] = [];
-    engine.on("message", msg => messages.push(msg));
+    engine.on("message", (msg) => messages.push(msg));
 
     engine.shuffle();
 
-    const leaves = messages.filter(m => m.kind === "leave");
-    const joins = messages.filter(m => m.kind === "join");
+    const leaves = messages.filter((m) => m.kind === "leave");
+    const joins = messages.filter((m) => m.kind === "join");
     expect(leaves.length).toBeGreaterThan(0);
     expect(joins.length).toBeGreaterThan(0);
     expect(engine.activeAgents.length + engine.benchedAgents.length).toBe(5);
@@ -257,11 +310,11 @@ describe("SalonEngine.injectUserMessage", () => {
     engine.open();
 
     const messages: RoomMessage[] = [];
-    engine.on("message", msg => messages.push(msg));
+    engine.on("message", (msg) => messages.push(msg));
 
     engine.injectUserMessage("Hello from user");
 
-    const userMsgs = messages.filter(m => m.kind === "user");
+    const userMsgs = messages.filter((m) => m.kind === "user");
     expect(userMsgs).toHaveLength(1);
     expect(userMsgs[0].content).toBe("Hello from user");
     expect(userMsgs[0].agent).toBe("YOU");
@@ -306,14 +359,26 @@ describe("SalonEngine.stop", () => {
 describe("SalonEngine message IDs with preloaded history", () => {
   it("assigns IDs to preloaded history and continues sequence", () => {
     const history: RoomMessage[] = [
-      { timestamp: new Date(), agent: "A", content: "Old msg 1", color: "cyan", kind: "chat" },
-      { timestamp: new Date(), agent: "B", content: "Old msg 2", color: "cyan", kind: "chat" },
+      {
+        timestamp: new Date(),
+        agent: "A",
+        content: "Old msg 1",
+        color: "cyan",
+        kind: "chat",
+      },
+      {
+        timestamp: new Date(),
+        agent: "B",
+        content: "Old msg 2",
+        color: "cyan",
+        kind: "chat",
+      },
     ];
     const agents = [makeAgent("A"), makeAgent("B"), makeAgent("C")];
     const engine = new SalonEngine(defaultConfig, agents, history);
 
     const messages: RoomMessage[] = [];
-    engine.on("message", msg => messages.push(msg));
+    engine.on("message", (msg) => messages.push(msg));
     engine.open();
 
     // New messages should continue from where preloaded left off

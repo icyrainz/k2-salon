@@ -22,8 +22,14 @@ import { generateAndCacheTts, playTts } from "../engine/tts.js";
 
 function ask(prompt: string): Promise<string> {
   return new Promise((resolve) => {
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    rl.question(prompt, (answer) => { rl.close(); resolve(answer); });
+    const rl = createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+    rl.question(prompt, (answer) => {
+      rl.close();
+      resolve(answer);
+    });
   });
 }
 
@@ -57,7 +63,10 @@ async function main() {
     process.stdout.write("\x1b[1mk2-salon\x1b[0m — Multi-AI Debate Room\n\n");
     roomName = await ask("Room name (creates new if doesn't exist): ");
     roomName = roomName.trim().toLowerCase().replace(/\s+/g, "-");
-    if (!roomName) { process.stdout.write("No room name provided. Exiting.\n"); process.exit(0); }
+    if (!roomName) {
+      process.stdout.write("No room name provided. Exiting.\n");
+      process.exit(0);
+    }
   } else {
     roomName = arg.toLowerCase().replace(/\s+/g, "-");
   }
@@ -69,7 +78,10 @@ async function main() {
       language = langFlag ?? meta.language ?? salonConfig.room.language;
       savedRoster = meta.activeRoster;
       isResumed = true;
-      const prevMessages = await loadPreviousSessions(roomName, salonConfig.room.contextWindow);
+      const prevMessages = await loadPreviousSessions(
+        roomName,
+        salonConfig.room.contextWindow,
+      );
       preloadedHistory.push(...prevMessages);
       process.stdout.write(
         `\x1b[2m  Resuming room "${roomName}" — ${prevMessages.length} messages loaded\x1b[0m\n`,
@@ -85,20 +97,34 @@ async function main() {
         } else {
           topic = await ask("Topic for this room: ");
           topic = topic.trim();
-          if (!topic) { process.stdout.write("No topic provided. Exiting.\n"); process.exit(0); }
+          if (!topic) {
+            process.stdout.write("No topic provided. Exiting.\n");
+            process.exit(0);
+          }
         }
       } else {
         topic = await ask("Topic for this room: ");
         topic = topic.trim();
-        if (!topic) { process.stdout.write("No topic provided. Exiting.\n"); process.exit(0); }
+        if (!topic) {
+          process.stdout.write("No topic provided. Exiting.\n");
+          process.exit(0);
+        }
       }
       language = langFlag ?? salonConfig.room.language;
-      await saveRoomMeta(roomName, { topic, language, created: new Date().toISOString(), lastSession: 0 });
+      await saveRoomMeta(roomName, {
+        topic,
+        language,
+        created: new Date().toISOString(),
+        lastSession: 0,
+      });
     }
   } else {
     topic = await ask(`Creating new room "${roomName}". Topic: `);
     topic = topic.trim();
-    if (!topic) { process.stdout.write("No topic provided. Exiting.\n"); process.exit(0); }
+    if (!topic) {
+      process.stdout.write("No topic provided. Exiting.\n");
+      process.exit(0);
+    }
 
     if (langFlag) {
       language = langFlag;
@@ -108,14 +134,22 @@ async function main() {
     }
 
     await createRoomDir(roomName);
-    await saveRoomMeta(roomName, { topic, language, created: new Date().toISOString(), lastSession: 0 });
+    await saveRoomMeta(roomName, {
+      topic,
+      language,
+      created: new Date().toISOString(),
+      lastSession: 0,
+    });
   }
 
   const session = await nextSessionNumber(roomName);
   const transcript = new TranscriptWriter(roomName, session, topic);
 
   const meta = await loadRoomMeta(roomName);
-  if (meta) { meta.lastSession = session; await saveRoomMeta(roomName, meta); }
+  if (meta) {
+    meta.lastSession = session;
+    await saveRoomMeta(roomName, meta);
+  }
 
   const config: RoomConfig = { ...salonConfig.room, topic, language };
   const engine = new SalonEngine(config, roster, preloadedHistory, savedRoster);
@@ -135,7 +169,7 @@ async function main() {
   const saveActiveRoster = async () => {
     const m = await loadRoomMeta(roomName);
     if (m) {
-      m.activeRoster = [...engine.activeAgents].map(a => a.personality.name);
+      m.activeRoster = [...engine.activeAgents].map((a) => a.personality.name);
       await saveRoomMeta(roomName, m);
     }
   };
@@ -154,7 +188,7 @@ async function main() {
   };
 
   const handleTts = async (msgId: number, agentName: string) => {
-    const agentConfig = roster.find(a => a.personality.name === agentName);
+    const agentConfig = roster.find((a) => a.personality.name === agentName);
     const color = agentConfig?.personality.color ?? ("white" as const);
 
     tui.handle.setTtsActivity({ agent: agentName, color, phase: "generating" });
@@ -166,7 +200,12 @@ async function main() {
         return;
       }
 
-      const filePath = await generateAndCacheTts(roomName, msgId, content, agentName);
+      const filePath = await generateAndCacheTts(
+        roomName,
+        msgId,
+        content,
+        agentName,
+      );
 
       tui.handle.setTtsActivity({ agent: agentName, color, phase: "playing" });
       const { done } = playTts(filePath);
@@ -192,7 +231,13 @@ async function main() {
   // ── Mount TUI ──────────────────────────────────────────────────────
   const tui = renderTui(
     engine,
-    { roomName, session, topic, resumed: isResumed, contextCount: preloadedHistory.length },
+    {
+      roomName,
+      session,
+      topic,
+      resumed: isResumed,
+      contextCount: preloadedHistory.length,
+    },
     handleUserInput,
     handleQuit,
   );
@@ -221,7 +266,9 @@ async function main() {
   tui.handle.setActiveAgents([...engine.activeAgents]);
   if (isResumed && preloadedHistory.length > 0) {
     const TAIL = 20;
-    const conversationOnly = preloadedHistory.filter(m => m.kind === "chat" || m.kind === "user");
+    const conversationOnly = preloadedHistory.filter(
+      (m) => m.kind === "chat" || m.kind === "user",
+    );
     const tail = conversationOnly.slice(-TAIL);
     if (conversationOnly.length > TAIL) {
       tui.handle.pushMessage({
@@ -254,7 +301,10 @@ async function main() {
     });
 
     for (const msg of preloadedHistory) {
-      if ((msg.kind === "chat" || msg.kind === "user") && msg.id !== undefined) {
+      if (
+        (msg.kind === "chat" || msg.kind === "user") &&
+        msg.id !== undefined
+      ) {
         ttsMessageMap.set(msg.id, msg.content);
       }
     }
@@ -290,8 +340,16 @@ async function main() {
         await engine.sleep(120);
         const input = inputBuffer.shift();
         if (input === undefined) continue;
-        if (input === "\x00NEXT") { advanced = true; break; }
-        if (input === "\x00FREE") { governed = false; tui.handle.setGoverned(false); advanced = true; break; }
+        if (input === "\x00NEXT") {
+          advanced = true;
+          break;
+        }
+        if (input === "\x00FREE") {
+          governed = false;
+          tui.handle.setGoverned(false);
+          advanced = true;
+          break;
+        }
         if (input === "\x00GOVERN") continue;
         if (input === "\x00SHUFFLE") {
           engine.shuffle();
@@ -299,18 +357,29 @@ async function main() {
           await saveActiveRoster();
           break;
         }
-        if (input.trim()) { engine.injectUserMessage(input); advanced = true; }
+        if (input.trim()) {
+          engine.injectUserMessage(input);
+          advanced = true;
+        }
       }
 
       if (!engine.running || wantsQuit) break;
       if (!advanced) continue;
 
-      await engine.step({ verbose: true, churn: false, speaker: nextSpeaker ?? undefined });
+      await engine.step({
+        verbose: true,
+        churn: false,
+        speaker: nextSpeaker ?? undefined,
+      });
 
       let stale: string | undefined;
       while ((stale = inputBuffer.shift()) !== undefined) {
         if (stale === "\x00NEXT") continue;
-        if (stale === "\x00FREE") { governed = false; tui.handle.setGoverned(false); break; }
+        if (stale === "\x00FREE") {
+          governed = false;
+          tui.handle.setGoverned(false);
+          break;
+        }
         if (stale === "\x00GOVERN") break;
         if (stale === "\x00SHUFFLE") {
           engine.shuffle();
@@ -318,7 +387,10 @@ async function main() {
           await saveActiveRoster();
           break;
         }
-        if (stale.trim()) { engine.injectUserMessage(stale); break; }
+        if (stale.trim()) {
+          engine.injectUserMessage(stale);
+          break;
+        }
       }
     } else {
       const jitter = Math.random() * 3000;
@@ -327,13 +399,14 @@ async function main() {
       if (!engine.running || wantsQuit) break;
 
       const input = inputBuffer.shift();
-      if (input === "\x00GOVERN") { governed = true; tui.handle.setGoverned(true); }
-      else if (input === "\x00SHUFFLE") {
+      if (input === "\x00GOVERN") {
+        governed = true;
+        tui.handle.setGoverned(true);
+      } else if (input === "\x00SHUFFLE") {
         engine.shuffle();
         tui.handle.setActiveAgents([...engine.activeAgents]);
         await saveActiveRoster();
-      }
-      else if (input?.trim()) engine.injectUserMessage(input);
+      } else if (input?.trim()) engine.injectUserMessage(input);
 
       await engine.step({ verbose: false, churn: true });
     }

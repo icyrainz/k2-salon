@@ -36,7 +36,10 @@ export async function loadRoomMeta(roomName: string): Promise<RoomMeta | null> {
   return parseYaml(raw) as RoomMeta;
 }
 
-export async function saveRoomMeta(roomName: string, meta: RoomMeta): Promise<void> {
+export async function saveRoomMeta(
+  roomName: string,
+  meta: RoomMeta,
+): Promise<void> {
   const dir = join(ROOMS_DIR, roomName);
   if (!existsSync(dir)) await mkdir(dir, { recursive: true });
   await writeFile(join(dir, "room.yaml"), stringifyYaml(meta));
@@ -46,13 +49,15 @@ export async function saveRoomMeta(roomName: string, meta: RoomMeta): Promise<vo
 // Reads any .md file in the room dir that isn't a session transcript.
 // This includes seed.md, discussions.md, or any freeform markdown.
 
-export async function loadSeedMaterial(roomName: string): Promise<string | null> {
+export async function loadSeedMaterial(
+  roomName: string,
+): Promise<string | null> {
   const dir = join(ROOMS_DIR, roomName);
   if (!existsSync(dir)) return null;
 
   const files = await readdir(dir);
   const seedFiles = files.filter(
-    f => f.endsWith(".md") && !f.match(/^\d{3}-session\.md$/),
+    (f) => f.endsWith(".md") && !f.match(/^\d{3}-session\.md$/),
   );
 
   if (seedFiles.length === 0) return null;
@@ -80,9 +85,9 @@ export async function nextSessionNumber(roomName: string): Promise<number> {
 
   const files = await readdir(dir);
   const sessions = files
-    .map(f => f.match(/^(\d{3})-session\.md$/))
+    .map((f) => f.match(/^(\d{3})-session\.md$/))
     .filter(Boolean)
-    .map(m => parseInt(m![1], 10));
+    .map((m) => parseInt(m![1], 10));
 
   return sessions.length > 0 ? Math.max(...sessions) + 1 : 1;
 }
@@ -97,7 +102,7 @@ export async function loadPreviousSessions(
 
   const files = await readdir(dir);
   const sessionFiles = files
-    .filter(f => f.match(/^\d{3}-session\.md$/))
+    .filter((f) => f.match(/^\d{3}-session\.md$/))
     .sort(); // chronological order
 
   const allMessages: RoomMessage[] = [];
@@ -169,7 +174,8 @@ export class TranscriptWriter {
       await this.ensureFile();
       for (const buffered of this.pending) {
         const bufferedLine = formatMessageToMarkdown(buffered);
-        if (bufferedLine) await writeFile(this.filePath, bufferedLine, { flag: "a" });
+        if (bufferedLine)
+          await writeFile(this.filePath, bufferedLine, { flag: "a" });
       }
       this.pending = [];
     }
@@ -319,7 +325,9 @@ export function parseSeedToMessages(seedContent: string): RoomMessage[] {
     }
 
     // Match ## Assistant header
-    const assistantMatch = trimmed.match(/^## Assistant\s*(?:\(([^)]*)\))?\s*\n*([\s\S]*)$/);
+    const assistantMatch = trimmed.match(
+      /^## Assistant\s*(?:\(([^)]*)\))?\s*\n*([\s\S]*)$/,
+    );
     if (assistantMatch) {
       const body = assistantMatch[2].trim();
       if (body) {

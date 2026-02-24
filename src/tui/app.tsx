@@ -58,10 +58,12 @@ function Header({ roomName, session, topic, resumed }: HeaderProps) {
   return (
     <Box flexDirection="column">
       <Box>
-        <Text bold color="cyan">k2-salon</Text>
+        <Text bold color="cyan">
+          k2-salon
+        </Text>
         <Text dimColor> -- </Text>
         <Text bold>{roomName}</Text>
-        <Text dimColor>  session {session}</Text>
+        <Text dimColor> session {session}</Text>
         {resumed && <Text dimColor> (resumed)</Text>}
       </Box>
       <Box>
@@ -91,7 +93,8 @@ function renderContent(text: string): React.ReactNode {
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
   for (const match of text.matchAll(pattern)) {
-    if (match.index! > lastIndex) parts.push(text.slice(lastIndex, match.index));
+    if (match.index! > lastIndex)
+      parts.push(text.slice(lastIndex, match.index));
     const name = match[1];
     parts.push(
       <Text key={match.index} bold color={mentionColorMap.get(name)}>
@@ -113,16 +116,22 @@ function ChatMessage({ dm }: { dm: DisplayMessage }) {
 
   switch (msg.kind) {
     case "join": {
-      const providerInfo = msg.providerLabel && msg.modelLabel
-        ? ` ${msg.providerLabel}/${msg.modelLabel}`
-        : "";
+      const providerInfo =
+        msg.providerLabel && msg.modelLabel
+          ? ` ${msg.providerLabel}/${msg.modelLabel}`
+          : "";
       return (
         <Box>
           <Text dimColor>{time} </Text>
           <Text dimColor>{"-->>"} </Text>
-          <Text bold color={inkColor}>{msg.agent}</Text>
+          <Text bold color={inkColor}>
+            {msg.agent}
+          </Text>
           <Text dimColor> has joined </Text>
-          <Text italic>({msg.content}{providerInfo ? ` \u00b7${providerInfo}` : ""})</Text>
+          <Text italic>
+            ({msg.content}
+            {providerInfo ? ` \u00b7${providerInfo}` : ""})
+          </Text>
         </Box>
       );
     }
@@ -132,7 +141,9 @@ function ChatMessage({ dm }: { dm: DisplayMessage }) {
         <Box>
           <Text dimColor>{time} </Text>
           <Text dimColor>{"<<--"} </Text>
-          <Text bold color={inkColor}>{msg.agent}</Text>
+          <Text bold color={inkColor}>
+            {msg.agent}
+          </Text>
           <Text dimColor> has left </Text>
           <Text italic>({msg.content})</Text>
         </Box>
@@ -141,7 +152,9 @@ function ChatMessage({ dm }: { dm: DisplayMessage }) {
     case "system":
       return (
         <Box>
-          <Text dimColor>{time}   * {msg.content}</Text>
+          <Text dimColor>
+            {time} * {msg.content}
+          </Text>
         </Box>
       );
 
@@ -150,7 +163,9 @@ function ChatMessage({ dm }: { dm: DisplayMessage }) {
         <Box flexDirection="column">
           <Box>
             <Text dimColor>{time} </Text>
-            <Text bold color="whiteBright">{"<YOU>"}</Text>
+            <Text bold color="whiteBright">
+              {"<YOU>"}
+            </Text>
           </Box>
           <Box marginLeft={6}>
             <Text>{renderContent(msg.content)}</Text>
@@ -164,7 +179,11 @@ function ChatMessage({ dm }: { dm: DisplayMessage }) {
         <Box flexDirection="column">
           <Box>
             <Text dimColor>{time} </Text>
-            <Text bold color={inkColor}>{"<"}{msg.agent}{">"}</Text>
+            <Text bold color={inkColor}>
+              {"<"}
+              {msg.agent}
+              {">"}
+            </Text>
           </Box>
           <Box marginLeft={6}>
             <Text>{renderContent(content)}</Text>
@@ -181,9 +200,12 @@ function ChatMessage({ dm }: { dm: DisplayMessage }) {
 // ── Who table (local-only display) ──────────────────────────────────
 
 function WhoTable({ agents }: { agents: AgentConfig[] }) {
-  const nameWidth = Math.max(...agents.map(a => a.personality.name.length), 4);
+  const nameWidth = Math.max(
+    ...agents.map((a) => a.personality.name.length),
+    4,
+  );
   const provWidth = Math.max(
-    ...agents.map(a => {
+    ...agents.map((a) => {
       const prov = a.providerName ?? a.provider;
       return `${prov}/${a.model}`.length;
     }),
@@ -192,13 +214,13 @@ function WhoTable({ agents }: { agents: AgentConfig[] }) {
 
   return (
     <Box flexDirection="column" marginTop={0} marginBottom={0}>
-      <Text dimColor>  {"=".repeat(60)}</Text>
+      <Text dimColor> {"=".repeat(60)}</Text>
       {agents.map((a) => {
         const prov = a.providerName ?? a.provider;
         const provModel = `${prov}/${a.model}`;
         return (
           <Box key={a.personality.name}>
-            <Text>  </Text>
+            <Text> </Text>
             <Text bold color={toInkColor(a.personality.color)}>
               {a.personality.name.padEnd(nameWidth + 2)}
             </Text>
@@ -207,17 +229,21 @@ function WhoTable({ agents }: { agents: AgentConfig[] }) {
           </Box>
         );
       })}
-      <Text dimColor>  {"=".repeat(60)}</Text>
+      <Text dimColor> {"=".repeat(60)}</Text>
     </Box>
   );
 }
 
 // ── Status bar ──────────────────────────────────────────────────────
 
-function StatusBar({ agents }: { agents: { name: string; color: AgentColor }[] }) {
+function StatusBar({
+  agents,
+}: {
+  agents: { name: string; color: AgentColor }[];
+}) {
   return (
     <Box>
-      <Text dimColor>  In room: </Text>
+      <Text dimColor> In room: </Text>
       {agents.map((a, i) => (
         <React.Fragment key={a.name}>
           {i > 0 && <Text dimColor>, </Text>}
@@ -235,13 +261,13 @@ interface InputLineProps {
 }
 
 const COMMANDS = [
-  { cmd: "/next",    hint: "advance discussion" },
-  { cmd: "/who",     hint: "show participants" },
-  { cmd: "/tts",     hint: "play message audio" },
+  { cmd: "/next", hint: "advance discussion" },
+  { cmd: "/who", hint: "show participants" },
+  { cmd: "/tts", hint: "play message audio" },
   { cmd: "/shuffle", hint: "new random roster" },
-  { cmd: "/govern",  hint: "take control" },
-  { cmd: "/free",    hint: "auto mode" },
-  { cmd: "/quit",    hint: "exit" },
+  { cmd: "/govern", hint: "take control" },
+  { cmd: "/free", hint: "auto mode" },
+  { cmd: "/quit", hint: "exit" },
 ] as const;
 
 type InputMode = "command" | "input";
@@ -272,7 +298,12 @@ function InputLine({ onSubmit }: InputLineProps) {
         setCommandIndex((i) => (i - 1 + COMMANDS.length) % COMMANDS.length);
       } else if (key.tab) {
         setCommandIndex((i) => (i + 1) % COMMANDS.length);
-      } else if (key.downArrow || key.upArrow || (key.ctrl && input === "n") || (key.ctrl && input === "p")) {
+      } else if (
+        key.downArrow ||
+        key.upArrow ||
+        (key.ctrl && input === "n") ||
+        (key.ctrl && input === "p")
+      ) {
         switchMode();
       } else if (key.return) {
         onSubmit(COMMANDS[commandIndex].cmd);
@@ -311,8 +342,13 @@ function InputLine({ onSubmit }: InputLineProps) {
 
   return (
     <Box>
-      <Text bold color="green">{">"} {COMMANDS[commandIndex].cmd}</Text>
-      <Text dimColor>  {COMMANDS[commandIndex].hint}  [Tab] cycle commands  [↓] input mode</Text>
+      <Text bold color="green">
+        {">"} {COMMANDS[commandIndex].cmd}
+      </Text>
+      <Text dimColor>
+        {" "}
+        {COMMANDS[commandIndex].hint} [Tab] cycle commands [↓] input mode
+      </Text>
     </Box>
   );
 }
@@ -331,27 +367,33 @@ function TtsSelectBar({ messages, selectedIndex }: TtsSelectBarProps) {
   if (speakable.length === 0) {
     return (
       <Box>
-        <Text dimColor>  No messages to play.</Text>
+        <Text dimColor> No messages to play.</Text>
       </Box>
     );
   }
 
   const idx = Math.min(selectedIndex, speakable.length - 1);
   const dm = speakable[speakable.length - 1 - idx];
-  const preview = dm.msg.content.length > 80
-    ? dm.msg.content.slice(0, 80) + "..."
-    : dm.msg.content;
+  const preview =
+    dm.msg.content.length > 80
+      ? dm.msg.content.slice(0, 80) + "..."
+      : dm.msg.content;
   const inkColor = toInkColor(dm.msg.color);
 
   return (
     <Box flexDirection="column">
       <Box>
-        <Text color="yellow" bold>  ▶ TTS: </Text>
-        <Text bold color={inkColor}>[{dm.msg.agent}]</Text>
+        <Text color="yellow" bold>
+          {" "}
+          ▶ TTS:{" "}
+        </Text>
+        <Text bold color={inkColor}>
+          [{dm.msg.agent}]
+        </Text>
         <Text> "{preview}"</Text>
       </Box>
       <Box>
-        <Text dimColor>    [↑↓] select  [Enter] play  [Esc] cancel</Text>
+        <Text dimColor> [↑↓] select [Enter] play [Esc] cancel</Text>
       </Box>
     </Box>
   );
@@ -414,7 +456,9 @@ function App({
   const { exit } = useApp();
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [activeAgents, setActiveAgents] = useState<readonly AgentConfig[]>([]);
-  const [whoDisplay, setWhoDisplay] = useState<readonly AgentConfig[] | null>(null);
+  const [whoDisplay, setWhoDisplay] = useState<readonly AgentConfig[] | null>(
+    null,
+  );
   const [governed, setGoverned] = useState(true);
   const [agentActivity, setAgentActivity] = useState<{
     agent: string;
@@ -442,7 +486,9 @@ function App({
         emitTuiEvent({ type: "streamDone", agent: sr.agent });
       }
       // Find the agent's color from the engine
-      const agentConfig = engine.activeAgents.find(a => a.personality.name === agent);
+      const agentConfig = engine.activeAgents.find(
+        (a) => a.personality.name === agent,
+      );
       const color: AgentColor = agentConfig?.personality.color ?? "white";
       emitTuiEvent({ type: "streamStart", agent, color });
     };
@@ -454,7 +500,9 @@ function App({
         if (sr !== null) {
           emitTuiEvent({ type: "streamDone", agent: sr.agent });
         }
-        const agentConfig = engine.activeAgents.find(a => a.personality.name === agent);
+        const agentConfig = engine.activeAgents.find(
+          (a) => a.personality.name === agent,
+        );
         const color: AgentColor = agentConfig?.personality.color ?? "white";
         emitTuiEvent({ type: "streamStart", agent, color });
       }
@@ -519,7 +567,11 @@ function App({
               ...prev,
               { id, msg: placeholder, streamContent: "", isStreaming: true },
             ]);
-            setAgentActivity({ agent: event.agent, color: event.color, phase: "thinking" });
+            setAgentActivity({
+              agent: event.agent,
+              color: event.color,
+              phase: "thinking",
+            });
             break;
           }
 
@@ -565,7 +617,10 @@ function App({
             setActiveAgents(event.agents);
             mentionColorMap = new Map<string, string>();
             for (const a of event.agents) {
-              mentionColorMap.set(a.personality.name, toInkColor(a.personality.color));
+              mentionColorMap.set(
+                a.personality.name,
+                toInkColor(a.personality.color),
+              );
             }
             break;
 
@@ -586,7 +641,9 @@ function App({
     };
 
     eventFlush = processEvents;
-    return () => { eventFlush = null; };
+    return () => {
+      eventFlush = null;
+    };
   }, []);
 
   // Periodic flush of streaming buffer to UI (every 50ms)
@@ -700,7 +757,11 @@ function App({
 
   return (
     <Box flexDirection="column">
-      <Static items={[{ id: "header", roomName, session, topic, resumed, contextCount }]}>
+      <Static
+        items={[
+          { id: "header", roomName, session, topic, resumed, contextCount },
+        ]}
+      >
         {(item) => (
           <Box key={item.id} flexDirection="column">
             <Header
@@ -711,7 +772,8 @@ function App({
             />
             {item.contextCount > 0 && (
               <Text dimColor>
-                {"  "}Context: {item.contextCount} messages from prior conversations
+                {"  "}Context: {item.contextCount} messages from prior
+                conversations
               </Text>
             )}
           </Box>
@@ -740,27 +802,34 @@ function App({
           />
         )}
         <Text> </Text>
-        {governed
-          ? <Text color="yellow" bold>[GOVERNED — /next to advance, /free for auto]</Text>
-          : <Text dimColor>[AUTO — /govern to take control]</Text>
-        }
+        {governed ? (
+          <Text color="yellow" bold>
+            [GOVERNED — /next to advance, /free for auto]
+          </Text>
+        ) : (
+          <Text dimColor>[AUTO — /govern to take control]</Text>
+        )}
       </Box>
 
       {agentActivity && (
         <Box>
-          <Text>  </Text>
+          <Text> </Text>
           <Spinner active={true} />
           <Text> </Text>
-          <Text bold color={toInkColor(agentActivity.color)}>{agentActivity.agent}</Text>
+          <Text bold color={toInkColor(agentActivity.color)}>
+            {agentActivity.agent}
+          </Text>
           <Text dimColor>
-            {agentActivity.phase === "thinking" ? " thinking..." : " responding..."}
+            {agentActivity.phase === "thinking"
+              ? " thinking..."
+              : " responding..."}
           </Text>
         </Box>
       )}
 
       {ttsActivity && !agentActivity && (
         <Box>
-          <Text>  </Text>
+          <Text> </Text>
           <Spinner active={true} />
           <Text> </Text>
           <Text bold color={toInkColor(ttsActivity.color)}>
@@ -792,7 +861,12 @@ export function renderTui(
   onQuit: () => void,
 ): TuiInstance {
   const instance = render(
-    <App engine={engine} {...props} onUserInput={onUserInput} onQuit={onQuit} />,
+    <App
+      engine={engine}
+      {...props}
+      onUserInput={onUserInput}
+      onQuit={onQuit}
+    />,
   );
 
   const handle: TuiHandle = {
@@ -801,7 +875,8 @@ export function renderTui(
       emitTuiEvent({ type: "setActiveAgents", agents }),
     showWho: (agents) => emitTuiEvent({ type: "showWho", agents }),
     setGoverned: (governed) => emitTuiEvent({ type: "setGoverned", governed }),
-    setTtsActivity: (activity) => emitTuiEvent({ type: "setTtsActivity", activity }),
+    setTtsActivity: (activity) =>
+      emitTuiEvent({ type: "setTtsActivity", activity }),
   };
 
   return {

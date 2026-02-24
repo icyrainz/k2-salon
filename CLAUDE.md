@@ -34,6 +34,8 @@ src/
     personality.ts       buildSystemPrompt() + buildMessages() for LLM context.
     speaker.ts           shouldSpeak(), getSpeakerCandidates() — pure probability.
     churn.ts             evaluateChurn() -> ChurnDecision (who joins/leaves).
+    voices.ts            TtsVoice type, VOICE_MAP, voiceFor() — shared voice
+                         mapping for OpenAI TTS (used by engine/tts + cli/podcast).
 
   engine/                Stateful orchestration, EventEmitter
     salon-engine.ts      SalonEngine class (TypedEmitter). Owns room state,
@@ -49,14 +51,18 @@ src/
                          from legacy salon.yaml to semantic AgentColor names.
     persist.ts           Transcript writer (markdown with frontmatter), session
                          loader, seed material parser. Room data in rooms/<name>/.
+    tts.ts               TTS synthesis (OpenAI API), caching (rooms/<name>/tts/),
+                         and playback (mpv). Used by /tts command in TUI.
 
   tui/                   Terminal UI (Ink/React)
     main.ts              Entry point. Pre-TUI setup (room resolution, topic
                          prompt via readline), then mounts ink TUI and runs
                          governed/free mode loop.
     app.tsx              Ink TUI. Components: Header, ChatMessage, WhoTable,
-                         StatusBar, InputLine. Communicates with SalonEngine
-                         via module-level event queue (emitTuiEvent/eventFlush).
+                         StatusBar, InputLine, TtsSelectBar. Communicates with
+                         SalonEngine via module-level event queue
+                         (emitTuiEvent/eventFlush). /tts command enters selection
+                         mode with TtsSelectBar for picking messages to play.
                          Streaming tokens buffered in ref, flushed to state
                          every 50ms.
     colors.ts            toInkColor() — AgentColor to ink color mapping.
