@@ -16,6 +16,7 @@ import { SalonEngine } from "../engine/salon-engine.js";
 import { renderTui } from "./app.js";
 import { toInkColor } from "./colors.js";
 import type { RoomConfig, RoomMessage } from "../core/types.js";
+import { generateAndCacheTts, playTts } from "../engine/tts.js";
 
 // ── Pre-TUI prompts ────────────────────────────────────────────────
 
@@ -127,6 +128,7 @@ async function main() {
 
   // ── Input buffer: TUI writes here, room loop reads ─────────────────
   const inputBuffer: string[] = [];
+  const ttsMessageMap = new Map<number, string>();
   let wantsQuit = false;
 
   /** Persist the current active roster to room.yaml */
@@ -141,8 +143,44 @@ async function main() {
   const handleUserInput = (line: string) => {
     if (line === "\x00WHO") {
       tui.handle.showWho([...engine.activeAgents]);
+    } else if (line.startsWith("\x00TTS:")) {
+      const parts = line.slice(5).split(":");
+      const msgId = parseInt(parts[0], 10);
+      const agentName = parts.slice(1).join(":");
+      handleTts(msgId, agentName);
     } else {
       inputBuffer.push(line);
+    }
+  };
+
+  const handleTts = async (msgId: number, agentName: string) => {
+    const agentConfig = roster.find(a => a.personality.name === agentName);
+    const color = agentConfig?.personality.color ?? ("white" as const);
+
+    tui.handle.setTtsActivity({ agent: agentName, color, phase: "generating" });
+
+    try {
+      const content = ttsMessageMap.get(msgId);
+      if (!content) {
+        tui.handle.setTtsActivity(null);
+        return;
+      }
+
+      const filePath = await generateAndCacheTts(roomName, msgId, content, agentName);
+
+      tui.handle.setTtsActivity({ agent: agentName, color, phase: "playing" });
+      const { done } = playTts(filePath);
+      await done;
+    } catch (err: any) {
+      tui.handle.pushMessage({
+        timestamp: new Date(),
+        agent: "SYSTEM",
+        content: `[TTS error: ${err.message}]`,
+        color: "gray",
+        kind: "system",
+      });
+    } finally {
+      tui.handle.setTtsActivity(null);
     }
   };
 
@@ -166,6 +204,9 @@ async function main() {
     if (msg.kind === "join" || msg.kind === "leave") {
       tui.handle.setActiveAgents([...engine.activeAgents]);
       saveActiveRoster();
+    }
+    if ((msg.kind === "chat" || msg.kind === "user") && msg.id !== undefined) {
+      ttsMessageMap.set(msg.id, msg.content);
     }
   });
 
@@ -211,6 +252,12 @@ async function main() {
       color: "gray",
       kind: "system",
     });
+
+    for (const msg of preloadedHistory) {
+      if ((msg.kind === "chat" || msg.kind === "user") && msg.id !== undefined) {
+        ttsMessageMap.set(msg.id, msg.content);
+      }
+    }
   }
 
   // ── Open room (emits topic + join messages via engine events) ──────
