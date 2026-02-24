@@ -151,14 +151,6 @@ async function main() {
     await saveRoomMeta(roomName, meta);
   }
 
-  // Assign IDs to preloaded history messages that lack them (legacy transcripts).
-  // Uses a simple hash so the same message always gets the same ID for TTS caching.
-  for (let i = 0; i < preloadedHistory.length; i++) {
-    if (preloadedHistory[i].id === undefined) {
-      preloadedHistory[i].id = i;
-    }
-  }
-
   const config: RoomConfig = { ...salonConfig.room, topic, language };
   const engine = new SalonEngine(config, roster, preloadedHistory, savedRoster);
 
@@ -170,7 +162,7 @@ async function main() {
 
   // ── Input buffer: TUI writes here, room loop reads ─────────────────
   const inputBuffer: string[] = [];
-  const ttsMessageMap = new Map<number, string>();
+  const ttsMessageMap = new Map<string, string>();
   let wantsQuit = false;
 
   /** Persist the current active roster to room.yaml */
@@ -203,7 +195,7 @@ async function main() {
       activeTtsSendCommand?.(cmd);
     } else if (line.startsWith("\x00TTS:")) {
       const parts = line.slice(5).split(":");
-      const msgId = parseInt(parts[0], 10);
+      const msgId = parts[0];
       const agentName = parts.slice(1).join(":");
       handleTts(msgId, agentName);
     } else {
@@ -211,7 +203,7 @@ async function main() {
     }
   };
 
-  const handleTts = async (msgId: number, agentName: string) => {
+  const handleTts = async (msgId: string, agentName: string) => {
     const agentConfig = roster.find((a) => a.personality.name === agentName);
     const color = agentConfig?.personality.color ?? ("white" as const);
 

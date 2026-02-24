@@ -13,6 +13,7 @@ import type {
   RoomConfig,
   RoomMessage,
 } from "../core/types.js";
+import { parseId } from "../core/types.js";
 
 // Mock the provider module before importing SalonEngine
 mock.module("./provider.js", () => ({
@@ -113,6 +114,7 @@ describe("SalonEngine constructor", () => {
   it("loads preloaded history", () => {
     const history: RoomMessage[] = [
       {
+        id: "0000-m",
         timestamp: new Date(),
         agent: "A",
         content: "Hello",
@@ -148,7 +150,7 @@ describe("SalonEngine.open", () => {
     expect(joins.length).toBe(engine.activeAgents.length);
   });
 
-  it("assigns sequential IDs to messages", () => {
+  it("assigns sequential string IDs to messages", () => {
     const agents = [makeAgent("A"), makeAgent("B"), makeAgent("C")];
     const engine = new SalonEngine(defaultConfig, agents);
 
@@ -157,17 +159,16 @@ describe("SalonEngine.open", () => {
 
     engine.open();
 
-    // All messages should have IDs
     for (const msg of messages) {
       expect(msg.id).toBeDefined();
-      expect(typeof msg.id).toBe("number");
+      expect(typeof msg.id).toBe("string");
+      expect(msg.id).toMatch(/^\d{4}-[me]$/);
     }
 
-    // IDs should be sequential starting from 0
-    const ids = messages.map((m) => m.id!);
-    for (let i = 1; i < ids.length; i++) {
-      expect(ids[i]).toBe(ids[i - 1] + 1);
-    }
+    // System message should end with -e, join messages with -e
+    expect(messages[0].id).toMatch(/-e$/);
+    const joins = messages.filter((m) => m.kind === "join");
+    for (const j of joins) expect(j.id).toMatch(/-e$/);
   });
 });
 
@@ -357,9 +358,10 @@ describe("SalonEngine.stop", () => {
 });
 
 describe("SalonEngine message IDs with preloaded history", () => {
-  it("assigns IDs to preloaded history and continues sequence", () => {
+  it("continues sequence from preloaded history", () => {
     const history: RoomMessage[] = [
       {
+        id: "0000-m",
         timestamp: new Date(),
         agent: "A",
         content: "Old msg 1",
@@ -367,6 +369,7 @@ describe("SalonEngine message IDs with preloaded history", () => {
         kind: "chat",
       },
       {
+        id: "0001-m",
         timestamp: new Date(),
         agent: "B",
         content: "Old msg 2",
@@ -381,8 +384,7 @@ describe("SalonEngine message IDs with preloaded history", () => {
     engine.on("message", (msg) => messages.push(msg));
     engine.open();
 
-    // New messages should continue from where preloaded left off
-    // Preloaded: 0, 1 → new messages start at 2
-    expect(messages[0].id).toBe(2);
+    // Preloaded max seq = 1, so new IDs start at seq 2
+    expect(parseId(messages[0].id ?? "")).toBe(2);
   });
 });

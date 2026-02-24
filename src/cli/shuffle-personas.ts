@@ -40,16 +40,16 @@ interface PersonasFile {
 // Colors use semantic AgentColor names (ink-compatible).
 
 const COLOR_NAME_MAP: Record<string, string> = {
-  cyan:             "cyan",
-  yellow:           "yellow",
-  magenta:          "magenta",
-  green:            "green",
-  blue:             "blue",
-  red:              "red",
-  "bright-red":     "redBright",
-  "bright-yellow":  "yellowBright",
-  "bright-green":   "greenBright",
-  "bright-cyan":    "cyanBright",
+  cyan: "cyan",
+  yellow: "yellow",
+  magenta: "magenta",
+  green: "green",
+  blue: "blue",
+  red: "red",
+  "bright-red": "redBright",
+  "bright-yellow": "yellowBright",
+  "bright-green": "greenBright",
+  "bright-cyan": "cyanBright",
   "bright-magenta": "magentaBright",
 };
 
@@ -155,7 +155,9 @@ async function main() {
   // stringify with yaml produces clean YAML
   const newYaml = [
     "# ─────────────────────────────────────────────────────────────────────",
-    "# k2-salon configuration  (roster last shuffled: " + new Date().toISOString() + ")",
+    "# k2-salon configuration  (roster last shuffled: " +
+      new Date().toISOString() +
+      ")",
     "# ─────────────────────────────────────────────────────────────────────",
     "# To shuffle again:  just shuffle",
     "# To see models:     just models",

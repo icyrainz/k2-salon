@@ -12,12 +12,16 @@ const MAX_DISPLAY = 20;
 async function main() {
   const config = await loadConfig();
 
-  process.stdout.write(`\n${BOLD}k2-salon${RESET} ${DIM}— Available Models${RESET}\n`);
+  process.stdout.write(
+    `\n${BOLD}k2-salon${RESET} ${DIM}— Available Models${RESET}\n`,
+  );
 
   const providers = Object.entries(config.providers);
 
   for (const [name, entry] of providers) {
-    process.stdout.write(`\n${DIM}┌${RESET} ${BOLD}${name}${RESET} ${DIM}(${entry.baseUrl})${RESET}\n`);
+    process.stdout.write(
+      `\n${DIM}┌${RESET} ${BOLD}${name}${RESET} ${DIM}(${entry.baseUrl})${RESET}\n`,
+    );
 
     try {
       const models = await listModels(entry.kind, {
@@ -26,7 +30,9 @@ async function main() {
       });
 
       if (models.length === 0) {
-        process.stdout.write(`${DIM}│${RESET}  ${DIM}(no models found)${RESET}\n`);
+        process.stdout.write(
+          `${DIM}│${RESET}  ${DIM}(no models found)${RESET}\n`,
+        );
       } else {
         const show = models.slice(0, MAX_DISPLAY);
         for (const m of show) {
@@ -40,7 +46,9 @@ async function main() {
       }
     } catch (err: any) {
       const msg = err?.cause?.code ?? err?.message ?? String(err);
-      process.stdout.write(`${DIM}│${RESET}  ${RED}(unreachable: ${msg})${RESET}\n`);
+      process.stdout.write(
+        `${DIM}│${RESET}  ${RED}(unreachable: ${msg})${RESET}\n`,
+      );
     }
 
     process.stdout.write(`${DIM}└${RESET}\n`);

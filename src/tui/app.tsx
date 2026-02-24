@@ -370,7 +370,11 @@ interface TtsSelectBarProps {
   roomName: string;
 }
 
-function TtsSelectBar({ messages, selectedIndex, roomName }: TtsSelectBarProps) {
+function TtsSelectBar({
+  messages,
+  selectedIndex,
+  roomName,
+}: TtsSelectBarProps) {
   const speakable = messages.filter(
     (dm) => dm.msg.kind === "chat" || dm.msg.kind === "user",
   );
@@ -389,8 +393,7 @@ function TtsSelectBar({ messages, selectedIndex, roomName }: TtsSelectBarProps) 
       ? dm.msg.content.slice(0, 80) + "..."
       : dm.msg.content;
   const inkColor = toInkColor(dm.msg.color);
-  const cached =
-    dm.msg.id !== undefined && ttsExists(roomName, dm.msg.id);
+  const cached = dm.msg.id !== undefined && ttsExists(roomName, dm.msg.id);
 
   return (
     <Box flexDirection="column">
@@ -474,7 +477,7 @@ export interface TuiHandle {
 
 type TuiEvent =
   | { type: "message"; msg: RoomMessage }
-  | { type: "streamStart"; agent: string; color: AgentColor; msgId: number }
+  | { type: "streamStart"; agent: string; color: AgentColor; msgId: string }
   | { type: "streamToken"; agent: string; token: string }
   | { type: "streamDone"; agent: string }
   | { type: "setActiveAgents"; agents: readonly AgentConfig[] }
@@ -530,7 +533,7 @@ function App({
 
   // Subscribe to engine events
   useEffect(() => {
-    const onThinking = (agent: string, msgId: number) => {
+    const onThinking = (agent: string, msgId: string) => {
       // Finalize any previous stream
       const sr = streamingRef.current;
       if (sr !== null) {
@@ -555,7 +558,7 @@ function App({
           (a) => a.personality.name === agent,
         );
         const color: AgentColor = agentConfig?.personality.color ?? "white";
-        emitTuiEvent({ type: "streamStart", agent, color, msgId: -1 });
+        emitTuiEvent({ type: "streamStart", agent, color, msgId: "" });
       }
       emitTuiEvent({ type: "streamToken", agent, token });
     };
@@ -597,8 +600,7 @@ function App({
                 setMessages((prev) => {
                   const found = prev.some(
                     (dm) =>
-                      dm.msg.kind === "chat" &&
-                      dm.msg.id === event.msg.id,
+                      dm.msg.kind === "chat" && dm.msg.id === event.msg.id,
                   );
                   if (found) return prev; // already rendered via streaming
                   const id = nextId.current++;
@@ -616,7 +618,7 @@ function App({
           case "streamStart": {
             const id = nextId.current++;
             const placeholder: RoomMessage = {
-              id: event.msgId >= 0 ? event.msgId : undefined,
+              id: event.msgId || undefined,
               timestamp: new Date(),
               agent: event.agent,
               content: "",

@@ -9,11 +9,11 @@ const ROOMS_DIR = "rooms";
 
 // ── Path helpers ───────────────────────────────────────────────────
 
-export function ttsPath(roomName: string, messageId: number): string {
-  return join(ROOMS_DIR, roomName, "tts", `msg-${messageId}.mp3`);
+export function ttsPath(roomName: string, messageId: string): string {
+  return join(ROOMS_DIR, roomName, "tts", `${messageId}.mp3`);
 }
 
-export function ttsExists(roomName: string, messageId: number): boolean {
+export function ttsExists(roomName: string, messageId: string): boolean {
   return existsSync(ttsPath(roomName, messageId));
 }
 
@@ -48,7 +48,7 @@ export async function synthesiseTts(
 
 export async function generateAndCacheTts(
   roomName: string,
-  messageId: number,
+  messageId: string,
   text: string,
   agentName: string,
 ): Promise<string> {
@@ -88,7 +88,13 @@ export function playTts(
   const socketPath = join(tmpdir(), `k2-mpv-${Date.now()}.sock`);
 
   const proc = Bun.spawn(
-    ["mpv", "--no-video", "--no-terminal", `--input-ipc-server=${socketPath}`, filePath],
+    [
+      "mpv",
+      "--no-video",
+      "--no-terminal",
+      `--input-ipc-server=${socketPath}`,
+      filePath,
+    ],
     {
       stdout: "ignore",
       stderr: "ignore",
@@ -102,7 +108,12 @@ export function playTts(
   let ipcBuffer = "";
 
   // Current known state from mpv
-  const state: TtsProgress = { position: 0, duration: 0, speed: 1, paused: false };
+  const state: TtsProgress = {
+    position: 0,
+    duration: 0,
+    speed: 1,
+    paused: false,
+  };
 
   const handleIpcData = (data: string) => {
     ipcBuffer += data;
@@ -136,13 +147,30 @@ export function playTts(
             open(s) {
               socket = s;
               // Observe properties for progress reporting
-              s.write(JSON.stringify({ command: ["observe_property", 1, "time-pos"] }) + "\n");
-              s.write(JSON.stringify({ command: ["observe_property", 2, "duration"] }) + "\n");
-              s.write(JSON.stringify({ command: ["observe_property", 3, "speed"] }) + "\n");
-              s.write(JSON.stringify({ command: ["observe_property", 4, "pause"] }) + "\n");
+              s.write(
+                JSON.stringify({
+                  command: ["observe_property", 1, "time-pos"],
+                }) + "\n",
+              );
+              s.write(
+                JSON.stringify({
+                  command: ["observe_property", 2, "duration"],
+                }) + "\n",
+              );
+              s.write(
+                JSON.stringify({ command: ["observe_property", 3, "speed"] }) +
+                  "\n",
+              );
+              s.write(
+                JSON.stringify({ command: ["observe_property", 4, "pause"] }) +
+                  "\n",
+              );
               // Poll progress to TUI at ~4Hz
               if (onProgress) {
-                progressInterval = setInterval(() => onProgress({ ...state }), 250);
+                progressInterval = setInterval(
+                  () => onProgress({ ...state }),
+                  250,
+                );
               }
               resolve();
             },

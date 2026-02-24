@@ -16,17 +16,23 @@ export function evaluateChurn(
   activeAgents: readonly AgentConfig[],
   benchedAgents: readonly AgentConfig[],
   config: Pick<RoomConfig, "minAgents" | "maxAgents">,
-  phrases: { randomLeaveExcuse: () => string; randomJoinGreeting: () => string },
+  phrases: {
+    randomLeaveExcuse: () => string;
+    randomJoinGreeting: () => string;
+  },
 ): ChurnDecision {
   const decision: ChurnDecision = {};
 
   // Evaluate leave
   if (activeAgents.length > config.minAgents) {
-    const evictable = activeAgents.filter(a => a.priority === undefined);
+    const evictable = activeAgents.filter((a) => a.priority === undefined);
     if (evictable.length > 0) {
       const candidate = evictable[Math.floor(Math.random() * evictable.length)];
       if (Math.random() < 0.25 * (1 - candidate.personality.chattiness)) {
-        decision.leave = { agent: candidate, excuse: phrases.randomLeaveExcuse() };
+        decision.leave = {
+          agent: candidate,
+          excuse: phrases.randomLeaveExcuse(),
+        };
       }
     }
   }
@@ -40,11 +46,17 @@ export function evaluateChurn(
     if (Math.random() < 0.3) {
       // Pick a random benched agent (exclude the one who just left, if any)
       const pool = decision.leave
-        ? benchedAgents.filter(a => a.personality.name !== decision.leave!.agent.personality.name)
+        ? benchedAgents.filter(
+            (a) =>
+              a.personality.name !== decision.leave!.agent.personality.name,
+          )
         : [...benchedAgents];
       if (pool.length > 0) {
         const idx = Math.floor(Math.random() * pool.length);
-        decision.join = { agent: pool[idx], greeting: phrases.randomJoinGreeting() };
+        decision.join = {
+          agent: pool[idx],
+          greeting: phrases.randomJoinGreeting(),
+        };
       }
     }
   }

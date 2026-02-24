@@ -78,15 +78,15 @@ describe("formatMessageToMarkdown", () => {
 
   it("includes message ID when present", () => {
     const md = formatMessageToMarkdown(
-      makeMsg({ kind: "chat", agent: "Sage", id: 42 }),
+      makeMsg({ kind: "chat", agent: "Sage", id: "0042-m" }),
     );
-    expect(md).toContain("#42");
+    expect(md).toContain("#0042-m");
     expect(md).toContain("**Sage**");
   });
 
-  it("omits message ID when not present", () => {
+  it("omits message ID when empty", () => {
     const md = formatMessageToMarkdown(
-      makeMsg({ kind: "chat", agent: "Sage" }),
+      makeMsg({ kind: "chat", agent: "Sage", id: "" }),
     );
     expect(md).not.toContain("#");
   });
@@ -193,18 +193,18 @@ Third line`;
   });
 
   it("parses message ID from chat header", () => {
-    const content = `**Sage** *14:30* #42\nHello world`;
+    const content = `**Sage** *14:30* #0042-m\nHello world`;
     const messages = parseSessionMarkdown(content);
     expect(messages).toHaveLength(1);
-    expect(messages[0].id).toBe(42);
+    expect(messages[0].id).toBe("0042-m");
     expect(messages[0].content).toBe("Hello world");
   });
 
   it("parses message ID from event header", () => {
-    const content = `> **Sage** *14:30* #5 [join] — Stoic philosopher`;
+    const content = `> **Sage** *14:30* #0005-e [join] — Stoic philosopher`;
     const messages = parseSessionMarkdown(content);
     expect(messages).toHaveLength(1);
-    expect(messages[0].id).toBe(5);
+    expect(messages[0].id).toBe("0005-e");
     expect(messages[0].kind).toBe("join");
   });
 
@@ -213,12 +213,12 @@ Third line`;
       kind: "chat",
       agent: "Sage",
       content: "ID test",
-      id: 7,
+      id: "0007-m",
     });
     const md = formatMessageToMarkdown(original);
     const parsed = parseSessionMarkdown(md);
     expect(parsed).toHaveLength(1);
-    expect(parsed[0].id).toBe(7);
+    expect(parsed[0].id).toBe("0007-m");
     expect(parsed[0].content).toBe("ID test");
   });
 });

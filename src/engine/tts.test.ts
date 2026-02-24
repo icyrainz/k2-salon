@@ -6,13 +6,13 @@ import { ttsPath, ttsExists } from "./tts.js";
 
 describe("ttsPath", () => {
   it("returns correct path format", () => {
-    const path = ttsPath("my-room", 42);
-    expect(path).toBe("rooms/my-room/tts/msg-42.mp3");
+    const path = ttsPath("my-room", "0042-m");
+    expect(path).toBe("rooms/my-room/tts/0042-m.mp3");
   });
 
-  it("pads single-digit IDs", () => {
-    const path = ttsPath("room", 5);
-    expect(path).toBe("rooms/room/tts/msg-5.mp3");
+  it("handles event IDs", () => {
+    const path = ttsPath("room", "0005-e");
+    expect(path).toBe("rooms/room/tts/0005-e.mp3");
   });
 });
 
@@ -36,14 +36,14 @@ describe("ttsExists", () => {
   });
 
   it("returns false when file does not exist", () => {
-    expect(ttsExists("test-room", 99)).toBe(false);
+    expect(ttsExists("test-room", "0099-m")).toBe(false);
   });
 
   it("returns true when file exists", async () => {
     await writeFile(
-      join(tmpDir, "rooms", "test-room", "tts", "msg-1.mp3"),
+      join(tmpDir, "rooms", "test-room", "tts", "0001-m.mp3"),
       "fake audio",
     );
-    expect(ttsExists("test-room", 1)).toBe(true);
+    expect(ttsExists("test-room", "0001-m")).toBe(true);
   });
 });

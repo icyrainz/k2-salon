@@ -109,8 +109,8 @@ rooms/
     001-session.md     # Session transcripts
     002-session.md
     tts/               # Cached TTS audio (auto-generated)
-      msg-0.mp3
-      msg-5.mp3
+      0000-m.mp3
+      0005-m.mp3
 ```
 
 - **Resuming**: `just room ai-thoughts` loads the previous session context and continues
@@ -147,6 +147,51 @@ reports/
 ```
 
 The `reports/` directory is gitignored.
+
+---
+
+## Video generation
+
+Generate a YouTube Short (1080x1920 vertical video) from any room's conversation.
+
+### Commands
+
+```bash
+# Generate a video from all messages in a room
+just video my-room
+
+# Generate from a specific message range (by sequence number)
+just video my-room --from 10 --to 45
+
+# Custom output file
+just video my-room --out custom.mp4
+```
+
+### Requirements
+
+- [ffmpeg](https://ffmpeg.org) + ffprobe — for audio concat and video rendering
+- `OPENAI_API_KEY` in `.env` — for TTS synthesis
+
+### Pipeline
+
+1. Loads all session transcripts from the room
+2. Generates TTS audio for each content message (reuses cached audio)
+3. Probes audio durations and builds a timeline manifest (`manifest.json`)
+4. Concatenates all audio segments with pauses into `audio.mp3`
+5. Renders a vertical video with ffmpeg: dark background, audio waveform visualization, speaker names in color, subtitles, and a progress bar
+
+### Output files
+
+```
+rooms/<name>/video/
+  manifest.json    # Renderer-agnostic timeline (segments, participants, metadata)
+  audio.mp3        # Concatenated audio track
+  shorts.mp4       # Final video (1080x1920)
+```
+
+The manifest is renderer-agnostic — it describes the timeline, participants, and audio files without coupling to ffmpeg. This allows swapping the renderer later.
+
+---
 
 ### How simulation works
 
@@ -299,6 +344,7 @@ src/
   cli/                 Other CLI entry points
     simulate.ts        Headless simulation — calls engine.step() in a loop, no UI
     podcast.ts         OpenAI TTS per turn, parallel synthesis, ffmpeg concat
+    video.ts           YouTube Shorts generator — TTS + ffmpeg video pipeline
     models.ts          `just models` command
     shuffle-personas.ts  Pick random personas from personas.yaml into salon.yaml
 prompts/                 Externalized system prompt templates
@@ -334,7 +380,7 @@ while (collecting) {
 
 **Events:** `message`, `thinking(agent, msgId)`, `streamToken`, `streamDone`
 
-Each message gets a sequential `id` assigned by the engine. The `thinking` event includes the pre-allocated message ID so the TUI can associate streaming content with the final persisted message from the start. IDs are preserved across sessions for TTS cache consistency.
+Each message gets a string ID in `NNNN-m` (content) or `NNNN-e` (event) format, assigned by the engine. The `thinking` event includes the pre-allocated message ID so the TUI can associate streaming content with the final persisted message from the start. IDs are preserved across sessions for TTS cache consistency.
 
 **`StepOptions`:**
 - `verbose` — agents write long paragraphs (governed mode / simulation) vs short chat messages (free mode)

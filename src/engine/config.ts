@@ -45,7 +45,9 @@ export async function loadConfig(configPath?: string): Promise<SalonConfig> {
   const parsed = parse(raw);
 
   if (!parsed || typeof parsed !== "object") {
-    throw new Error(`Invalid salon.yaml: expected an object, got ${typeof parsed}`);
+    throw new Error(
+      `Invalid salon.yaml: expected an object, got ${typeof parsed}`,
+    );
   }
 
   // Resolve ${ENV_VAR} patterns in all string values
@@ -63,7 +65,7 @@ export async function loadConfig(configPath?: string): Promise<SalonConfig> {
       const known = Object.keys(config.providers).join(", ");
       throw new Error(
         `Roster entry "${entry.name}" references unknown provider "${entry.provider}". ` +
-        `Known providers: ${known}`,
+          `Known providers: ${known}`,
       );
     }
   }
@@ -112,7 +114,7 @@ export function resolveRoster(
     } else {
       throw new Error(
         `Roster entry "${entry.name}" has no matching preset and no complete inline personality. ` +
-        `Available presets: ${presets.map(p => p.personality.name).join(", ")}`,
+          `Available presets: ${presets.map((p) => p.personality.name).join(", ")}`,
       );
     }
 

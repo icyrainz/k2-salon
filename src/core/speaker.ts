@@ -44,7 +44,7 @@ export function getSpeakerCandidates(
   // If nobody volunteered, force the longest-silent agent
   if (candidates.length === 0 && activeAgents.length > 0) {
     const sorted = [...activeAgents]
-      .filter(a => a.personality.name !== lastSpeaker)
+      .filter((a) => a.personality.name !== lastSpeaker)
       .sort((a, b) => {
         const ta = turnsSinceSpoke.get(a.personality.name) ?? 99;
         const tb = turnsSinceSpoke.get(b.personality.name) ?? 99;
@@ -65,12 +65,14 @@ export function peekNextSpeakerCandidates(
   lastSpeaker: string | null,
   turnsSinceSpoke: ReadonlyMap<string, number>,
 ): AgentConfig[] {
-  const candidates = activeAgents.filter(a => {
+  const candidates = activeAgents.filter((a) => {
     const turns = turnsSinceSpoke.get(a.personality.name) ?? 2;
     return a.personality.name !== lastSpeaker && turns >= 1;
   });
   if (candidates.length === 0) {
-    const fallback = activeAgents.find(a => a.personality.name !== lastSpeaker);
+    const fallback = activeAgents.find(
+      (a) => a.personality.name !== lastSpeaker,
+    );
     return fallback ? [fallback] : [];
   }
   return [...candidates];
