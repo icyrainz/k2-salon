@@ -1,44 +1,33 @@
+import { readFileSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 import type { AgentConfig, ChatMessage, Personality, RoomMessage } from "./types.js";
+
+// ── Load prompt templates at import time ──────────────────────────────
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PROMPTS_DIR = join(__dirname, "../../prompts");
+
+const SYSTEM_TEMPLATE = readFileSync(join(PROMPTS_DIR, "system.md"), "utf-8");
+const VERBOSE_RULES = readFileSync(join(PROMPTS_DIR, "rules-verbose.md"), "utf-8");
+const CONCISE_RULES = readFileSync(join(PROMPTS_DIR, "rules-concise.md"), "utf-8");
 
 // ── Build the system prompt for an agent given their personality ────
 
-export function buildSystemPrompt(p: Personality, topic: string, verbose: boolean, language: string = "English"): string {
-  const lengthRules = verbose
-    ? [
-        `- LENGTH: Write 2-4 thorough paragraphs. Each turn is your chance to develop a real argument.`,
-        `- Go deep — explain your reasoning, give examples, anticipate counterarguments.`,
-        `- You may use paragraph breaks to structure your thinking, but NO bullet points or headers.`,
-        `- Write like you're making a considered point in a seminar, not firing off a tweet.`,
-      ]
-    : [
-        `- LENGTH: 2-4 sentences MAX. This is a fast-moving chat room, not a blog post.`,
-        `- Write like you're texting in a group chat — short, punchy, conversational.`,
-        `- NEVER write bullet points, numbered lists, or markdown headers.`,
-        `- NEVER write more than one short paragraph. If the topic needs depth, you'll get another turn.`,
-        `- If you catch yourself writing a wall of text, stop and pick your single best point.`,
-      ];
-
-  return [
-    `You are "${p.name}" — ${p.tagline}.`,
-    ``,
-    `PERSONALITY TRAITS: ${p.traits.join(", ")}`,
-    `COMMUNICATION STYLE: ${p.style.join(". ")}`,
-    `PERSPECTIVE: ${p.bias}`,
-    ``,
-    `RULES FOR THIS DISCUSSION:`,
-    `- You are discussing: "${topic}"`,
-    `- LANGUAGE: You MUST write ALL your responses in ${language}. Do not switch to any other language, regardless of what others write.`,
-    `- Multiple people are participating. You see their names before their messages.`,
-    ...lengthRules,
-    `- Stay in character. Your personality should come through naturally.`,
-    `- You can agree, disagree, build on points, ask questions, or challenge others.`,
-    `- Reference other speakers by name when responding to their points.`,
-    `- Be opinionated. Don't be wishy-washy or try to please everyone.`,
-    `- If someone new joins, you can briefly acknowledge them.`,
-    `- Do NOT use quotation marks around your own message.`,
-    `- NEVER start your message with your own name. Not "${p.name}:" or "${p.name} —" or anything like that. Just start talking.`,
-    `- Write naturally, in your own voice.`,
-  ].join("\n");
+export function buildSystemPrompt(
+  p: Personality,
+  topic: string,
+  verbose: boolean,
+  language: string = "English",
+): string {
+  return SYSTEM_TEMPLATE.replace(/\{\{name\}\}/g, p.name)
+    .replace("{{tagline}}", p.tagline)
+    .replace("{{traits}}", p.traits.join(", "))
+    .replace("{{style}}", p.style.join(". "))
+    .replace("{{bias}}", p.bias)
+    .replace("{{topic}}", topic)
+    .replace("{{language}}", language)
+    .replace("{{lengthRules}}", verbose ? VERBOSE_RULES : CONCISE_RULES);
 }
 
 // ── Convert room history to ChatMessage format for an agent ─────────

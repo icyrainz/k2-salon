@@ -1,4 +1,7 @@
 import { describe, expect, it } from "bun:test";
+import { readFileSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 import { buildSystemPrompt, buildMessages } from "./personality.js";
 import type { AgentConfig, Personality, RoomMessage } from "./types.js";
 
@@ -27,6 +30,29 @@ function makeMsg(overrides: Partial<RoomMessage> & Pick<RoomMessage, "kind" | "a
   };
 }
 
+describe("prompt templates", () => {
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const promptsDir = join(__dirname, "../../prompts");
+
+  it("system.md exists and is non-empty", () => {
+    const content = readFileSync(join(promptsDir, "system.md"), "utf-8");
+    expect(content.length).toBeGreaterThan(0);
+    expect(content).toContain("{{name}}");
+  });
+
+  it("rules-verbose.md exists and is non-empty", () => {
+    const content = readFileSync(join(promptsDir, "rules-verbose.md"), "utf-8");
+    expect(content.length).toBeGreaterThan(0);
+    expect(content).toContain("2-4 paragraphs");
+  });
+
+  it("rules-concise.md exists and is non-empty", () => {
+    const content = readFileSync(join(promptsDir, "rules-concise.md"), "utf-8");
+    expect(content.length).toBeGreaterThan(0);
+    expect(content).toContain("2-4 sentences MAX");
+  });
+});
+
 describe("buildSystemPrompt", () => {
   it("includes agent name and tagline", () => {
     const prompt = buildSystemPrompt(testPersonality, "test topic", false);
@@ -53,12 +79,12 @@ describe("buildSystemPrompt", () => {
   it("verbose=false includes short length rules", () => {
     const prompt = buildSystemPrompt(testPersonality, "topic", false);
     expect(prompt).toContain("2-4 sentences MAX");
-    expect(prompt).not.toContain("2-4 thorough paragraphs");
+    expect(prompt).not.toContain("2-4 paragraphs");
   });
 
   it("verbose=true includes long length rules", () => {
     const prompt = buildSystemPrompt(testPersonality, "topic", true);
-    expect(prompt).toContain("2-4 thorough paragraphs");
+    expect(prompt).toContain("2-4 paragraphs");
     expect(prompt).not.toContain("2-4 sentences MAX");
   });
 
@@ -70,6 +96,18 @@ describe("buildSystemPrompt", () => {
   it("defaults to English when no language specified", () => {
     const prompt = buildSystemPrompt(testPersonality, "topic", false);
     expect(prompt).toContain("English");
+  });
+
+  it("includes anti-academic guardrails", () => {
+    const prompt = buildSystemPrompt(testPersonality, "topic", false);
+    expect(prompt).toContain("AVOID academic jargon");
+    expect(prompt).toContain("GROUND your points");
+  });
+
+  it("includes conversational tone rules", () => {
+    const prompt = buildSystemPrompt(testPersonality, "topic", false);
+    expect(prompt).toContain("like a real person talking");
+    expect(prompt).toContain("TONE");
   });
 });
 
