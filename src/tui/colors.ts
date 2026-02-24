@@ -32,3 +32,28 @@ const ANSI_TO_AGENT_COLOR: Record<string, AgentColor> = {
 export function ansiToAgentColor(ansi: string): AgentColor {
   return ANSI_TO_AGENT_COLOR[ansi] ?? "white";
 }
+
+// ── AgentColor → hex (for video rendering) ───────────────────────
+
+const HEX_MAP: Record<string, string> = {
+  black: "#000000",
+  red: "#ef4444",
+  green: "#22c55e",
+  yellow: "#eab308",
+  blue: "#3b82f6",
+  magenta: "#a855f7",
+  cyan: "#06b6d4",
+  white: "#e5e7eb",
+  gray: "#9ca3af",
+  redBright: "#f87171",
+  greenBright: "#4ade80",
+  yellowBright: "#facc15",
+  blueBright: "#60a5fa",
+  magentaBright: "#c084fc",
+  cyanBright: "#22d3ee",
+  whiteBright: "#ffffff",
+};
+
+export function toHexColor(color: AgentColor): string {
+  return HEX_MAP[color] ?? "#ffffff";
+}
