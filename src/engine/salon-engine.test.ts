@@ -385,6 +385,6 @@ describe("SalonEngine message IDs with preloaded history", () => {
     engine.open();
 
     // Preloaded max seq = 1, so new IDs start at seq 2
-    expect(parseId(messages[0].id)).toBe(2);
+    expect(parseId(messages[0].id ?? "")).toBe(2);
   });
 });
