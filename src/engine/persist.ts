@@ -195,22 +195,23 @@ export class TranscriptWriter {
 
 export function formatMessageToMarkdown(msg: RoomMessage): string {
   const time = fmtTimeISO(msg.timestamp);
+  const idTag = msg.id !== undefined ? ` #${msg.id}` : "";
 
   switch (msg.kind) {
     case "system":
-      return `> **SYSTEM** *${time}* — ${msg.content}\n\n`;
+      return `> **SYSTEM** *${time}*${idTag} — ${msg.content}\n\n`;
 
     case "join":
-      return `> **${msg.agent}** *${time}* [join] — ${msg.content}\n\n`;
+      return `> **${msg.agent}** *${time}*${idTag} [join] — ${msg.content}\n\n`;
 
     case "leave":
-      return `> **${msg.agent}** *${time}* [leave] — ${msg.content}\n\n`;
+      return `> **${msg.agent}** *${time}*${idTag} [leave] — ${msg.content}\n\n`;
 
     case "user":
-      return `**YOU** *${time}*\n${msg.content}\n\n`;
+      return `**YOU** *${time}*${idTag}\n${msg.content}\n\n`;
 
     case "chat":
-      return `**${msg.agent}** *${time}*\n${msg.content}\n\n`;
+      return `**${msg.agent}** *${time}*${idTag}\n${msg.content}\n\n`;
 
     default:
       return "";
@@ -241,11 +242,12 @@ export function parseSessionMarkdown(content: string): RoomMessage[] {
 
     // System/join/leave: > **NAME** *HH:MM* [kind] — content
     // or: > **SYSTEM** *HH:MM* — content
+    // Optional #N message ID between timestamp and kind tag
     const eventMatch = trimmed.match(
-      /^>\s*\*\*(\w+)\*\*\s*\*(\d{2}:\d{2})\*\s*(?:\[(\w+)\]\s*)?—\s*(.+)$/s,
+      /^>\s*\*\*(\w+)\*\*\s*\*(\d{2}:\d{2})\*\s*(?:#(\d+)\s*)?(?:\[(\w+)\]\s*)?—\s*(.+)$/s,
     );
     if (eventMatch) {
-      const [, agent, _time, kindTag, content] = eventMatch;
+      const [, agent, _time, idStr, kindTag, content] = eventMatch;
       let kind: RoomMessage["kind"] = "system";
       if (kindTag === "join") kind = "join";
       else if (kindTag === "leave") kind = "leave";
@@ -257,22 +259,24 @@ export function parseSessionMarkdown(content: string): RoomMessage[] {
         content: content.trim(),
         color: "white",
         kind,
+        ...(idStr ? { id: parseInt(idStr, 10) } : {}),
       });
       continue;
     }
 
-    // Chat/user: **NAME** *HH:MM*\ncontent (possibly multi-line)
+    // Chat/user: **NAME** *HH:MM* [#N]\ncontent (possibly multi-line)
     const chatMatch = trimmed.match(
-      /^\*\*(\w+)\*\*\s*\*(\d{2}:\d{2})\*\n([\s\S]+)$/,
+      /^\*\*(\w+)\*\*\s*\*(\d{2}:\d{2})\*(?:\s*#(\d+))?\n([\s\S]+)$/,
     );
     if (chatMatch) {
-      const [, agent, _time, content] = chatMatch;
+      const [, agent, _time, idStr, content] = chatMatch;
       messages.push({
         timestamp: new Date(),
         agent,
         content: content.trim(),
         color: "white",
         kind: agent === "YOU" ? "user" : "chat",
+        ...(idStr ? { id: parseInt(idStr, 10) } : {}),
       });
       continue;
     }
