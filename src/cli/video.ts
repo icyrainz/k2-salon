@@ -27,7 +27,23 @@ const ROOMS_DIR = "rooms";
 const WIDTH = 1080;
 const HEIGHT = 1920;
 const PAUSE_MS = 800;
-const FONT_PATH = "/System/Library/Fonts/Supplemental/Arial Unicode.ttf";
+function resolveFontPath(): string {
+  const candidates = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
+    "/usr/share/fonts/TTF/DejaVuSans.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+  ];
+  for (const p of candidates) {
+    if (existsSync(p)) return p;
+  }
+  process.stderr.write(
+    "Warning: no suitable font found, ffmpeg will use default bitmap font\n",
+  );
+  return "";
+}
+
+const FONT_PATH = resolveFontPath();
 const OLLAMA_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "qwen3:8b";
 
@@ -808,7 +824,7 @@ async function main() {
   const SUBTITLE_FONT_SIZE = 30;
   const SUBTITLE_LINE_HEIGHT = 46; // px per line with box padding
   const SUBTITLE_Y_START = 1450; // bottom third, above progress bar
-  const FONT = `:fontfile='${FONT_PATH}'`;
+  const FONT = FONT_PATH ? `:fontfile='${FONT_PATH}'` : "";
   const SUBTITLE_BOX = `:box=1:boxcolor=black@0.55:boxborderw=14`;
   const HEADER_BOX = `:box=1:boxcolor=black@0.6:boxborderw=10`;
 
