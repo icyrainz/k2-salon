@@ -145,17 +145,18 @@ function concatenateMp3s(
 // ── Escaping for ffmpeg drawtext ────────────────────────────────────
 
 function escapeDrawtext(text: string): string {
-  // Replace characters that break ffmpeg filter parsing with safe Unicode equivalents
+  // ffmpeg drawtext escaping requires two levels:
+  // Level 1 (text value): escape \, ', :
+  // Level 2 (filter graph): escape \, ', ;
+  // We apply both in one pass. Order matters: backslashes first.
   return text
-    .replace(/\\/g, "\u2216") // ∖ set minus
-    .replace(/'/g, "\u2019") // '  right single quote
-    .replace(/"/g, "\u201C") // "  left double quote
-    .replace(/;/g, "\uFF1B") // ；fullwidth semicolon
-    .replace(/,/g, "\uFF0C") // ，fullwidth comma
-    .replace(/:/g, "\uFF1A") // ：fullwidth colon
-    .replace(/%/g, "\uFF05") // ％fullwidth percent
-    .replace(/\[/g, "\uFF3B") // ［fullwidth left bracket
-    .replace(/\]/g, "\uFF3D") // ］fullwidth right bracket
+    .replace(/\\/g, "\\\\\\\\") // \ → \\\\ (escaped at both levels)
+    .replace(/'/g, "\\\\\\'") // ' → \\' (escaped at both levels)
+    .replace(/:/g, "\\\\:") // : → \\: (text-level escape)
+    .replace(/;/g, "\\;") // ; → \; (filter-level escape)
+    .replace(/%/g, "%%%%") // % → %% (drawtext expansion escape)
+    .replace(/\[/g, "\\[") // [ → \[ (filter-level escape)
+    .replace(/\]/g, "\\]") // ] → \] (filter-level escape)
     .replace(/\n/g, " ");
 }
 
