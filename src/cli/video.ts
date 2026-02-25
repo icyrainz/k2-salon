@@ -648,6 +648,35 @@ async function buildIntroScript(
   return script;
 }
 
+/** Extract a short provocative hook sentence from conversation text.
+ *  Picks the first sentence that contains a strong opinion or question. */
+function extractHookTeaser(
+  segments: { text: string; agent: string }[],
+): { text: string; agent: string } | null {
+  for (const seg of segments) {
+    // Split into sentences, find one that's punchy (< 80 chars, ends with ! or ? or has strong language)
+    const sentences = seg.text.match(/[^.!?]+[.!?]+/g);
+    if (!sentences) continue;
+    for (const s of sentences) {
+      const trimmed = s.trim();
+      if (trimmed.length < 20 || trimmed.length > 80) continue;
+      // Prefer sentences with questions, exclamations, or strong declarative tone
+      if (
+        /[!?]$/.test(trimmed) ||
+        /\b(only|never|always|best|worst|zero|impossible)\b/i.test(trimmed)
+      ) {
+        return { text: `"${trimmed}"`, agent: seg.agent };
+      }
+    }
+  }
+  // Fallback: first 70 chars of first segment
+  if (segments.length > 0) {
+    const first = segments[0].text.slice(0, 70).trim();
+    return { text: `"${first}..."`, agent: segments[0].agent };
+  }
+  return null;
+}
+
 // ── Main pipeline ───────────────────────────────────────────────────
 
 // ── Layout constants (portrait 9:16 for YouTube Shorts) ────────────
@@ -676,6 +705,9 @@ const LAYOUT = {
   outroThanksY: 768,
   outroBrandY: 922,
   outroTopicY: 1056,
+  outroCtaY: 1160,
+  hookY: 800,
+  hookSize: 30,
 };
 
 async function main() {
@@ -776,7 +808,9 @@ async function main() {
   } else {
     process.stderr.write("Intro narration cached, reusing\n");
   }
-  const INTRO_DURATION = ffprobe(introAudioPath) + 1; // +1s buffer after narration
+  const HOOK_DURATION = 2.5; // seconds of hook teaser before intro narration starts
+  const introNarrationDuration = ffprobe(introAudioPath);
+  const INTRO_DURATION = HOOK_DURATION + introNarrationDuration + 1; // hook + narration + 1s buffer
   process.stderr.write(
     `Intro: ${INTRO_DURATION.toFixed(1)}s — "${introScript.slice(0, 60)}..."\n`,
   );
@@ -869,7 +903,10 @@ async function main() {
 
   const chunkPaths: string[] = [];
 
-  // Lead with intro narration + silence buffer to align with video timeline
+  // Hook silence (teaser text only, no audio) + intro narration + buffer
+  const hookSilPath = join(tmpDir, "hook-silence.mp3");
+  generateSilence(HOOK_DURATION * 1000, hookSilPath);
+  chunkPaths.push(hookSilPath);
   chunkPaths.push(introAudioPath);
   const introBufferMs = 1000; // 1s silence after narration, before conversation
   const introSilPath = join(tmpDir, "intro-buffer.mp3");
@@ -942,18 +979,39 @@ async function main() {
     `drawbox=x=${Math.round(WIDTH * 0.3)}:y=${LAYOUT.accentLineY}:w=${Math.round(WIDTH * 0.4)}:h=2:color=0x06b6d4@0.5:t=fill`,
   );
 
+  // ── Hook teaser: provocative quote in first 2.5 seconds ──
+  const hook = extractHookTeaser(contentSegs);
+  if (hook) {
+    const hookColor = colorMap.get(hook.agent) ?? "#ffffff";
+    const hookHex = hookColor.replace("#", "0x");
+    const hookLines = wordWrap(hook.text, 32);
+    const hookFadeIn = 0.3;
+    const hookFadeOut = 0.4;
+    const hookAlpha = fadeExpr(0.2, HOOK_DURATION, hookFadeIn, hookFadeOut);
+    for (let i = 0; i < hookLines.length; i++) {
+      const y = LAYOUT.hookY + i * (LAYOUT.hookSize + 14);
+      drawtextFilters.push(
+        `drawtext=${FONT}:text='${escapeDrawtext(hookLines[i])}':fontsize=${LAYOUT.hookSize}:fontcolor=${hookHex}:x=(w-text_w)/2:y='${slideUpExpr(0.2, hookFadeIn, y, 25)}':alpha='${hookAlpha}'${SUBTITLE_BOX}`,
+      );
+    }
+    // Small "coming up..." label above the hook
+    drawtextFilters.push(
+      `drawtext=${FONT}:text='coming up...':fontsize=18:fontcolor=0x9ca3af:x=(w-text_w)/2:y='${slideUpExpr(0.2, hookFadeIn, LAYOUT.hookY - 40, 15)}':alpha='${hookAlpha}'`,
+    );
+  }
+
   // ── Intro sequence: staggered participant cards ──
   // Spread participant appearances evenly across the narration duration
   const introCardY = LAYOUT.introCardY;
   const introCardSpacing = LAYOUT.introCardSpacing;
-  const narrationDuration = INTRO_DURATION - 1; // exclude the 1s buffer
+  const narrationDuration = introNarrationDuration; // just the narration period
   const speakerInterval = narrationDuration / (participants.length + 1);
 
   for (let pi = 0; pi < participants.length; pi++) {
     const p = participants[pi];
     const hexColor = p.color.replace("#", "0x");
     const cardY = introCardY + pi * introCardSpacing;
-    const appearAt = speakerInterval * (pi + 1);
+    const appearAt = HOOK_DURATION + speakerInterval * (pi + 1);
     const disappearAt = INTRO_DURATION;
     const introFadeIn = 0.4;
     const introFadeOut = 0.5;
@@ -983,7 +1041,27 @@ async function main() {
   // Per-segment speaker name + rolling subtitles (one drawtext per line)
   const maxSubtitleChars = LAYOUT.subtitleWrap;
   const linesPerChunk = 3;
+  let prevAgent = "";
   for (const seg of contentSegs) {
+    // Speaker transition flash — brief white pulse when speaker changes
+    if (prevAgent && seg.agent !== prevAgent) {
+      const flashStart = Math.max(0, seg.startTime - 0.15);
+      const flashDuration = 0.25;
+      const flashEnd = flashStart + flashDuration;
+      const flashAlpha = fadeExpr(flashStart, flashEnd, 0.08, 0.17);
+      drawtextFilters.push(
+        `drawbox=x=0:y=0:w=${WIDTH}:h=${HEIGHT}:color=white@0.12:t=fill:enable='between(t,${flashStart.toFixed(3)},${flashEnd.toFixed(3)})'`,
+      );
+      // Also flash a thin colored line at the top in new speaker's color
+      const newColor = (colorMap.get(seg.agent) ?? "#ffffff").replace(
+        "#",
+        "0x",
+      );
+      drawtextFilters.push(
+        `drawbox=x=0:y=0:w=${WIDTH}:h=3:color=${newColor}:t=fill:enable='between(t,${flashStart.toFixed(3)},${(flashEnd + 0.1).toFixed(3)})'`,
+      );
+    }
+    prevAgent = seg.agent;
     const color = colorMap.get(seg.agent) ?? "#ffffff";
     const hexColor = color.replace("#", "0x");
     const name = escapeDrawtext(seg.agent);
@@ -1070,6 +1148,17 @@ async function main() {
   // Topic reminder
   drawtextFilters.push(
     `drawtext=${FONT}:text='${escapeDrawtext(meta.topic)}':fontsize=24:fontcolor=0xd1d5db:x=(w-text_w)/2:y=${LAYOUT.outroTopicY}:alpha='${outroAlpha}'${HEADER_BOX}`,
+  );
+  // CTA — "Like & Subscribe" with delayed entrance for emphasis
+  const ctaDelay = 0.8; // appears slightly after other outro elements
+  const ctaAlpha = fadeExpr(
+    outroStart - 0.5 + ctaDelay,
+    totalDuration,
+    0.4,
+    0.3,
+  );
+  drawtextFilters.push(
+    `drawtext=${FONT}:text='\u25B6 Like & Subscribe':fontsize=28:fontcolor=0xfbbf24:x=(w-text_w)/2:y='${slideUpExpr(outroStart - 0.5 + ctaDelay, 0.4, LAYOUT.outroCtaY, 20)}':alpha='${ctaAlpha}'${HEADER_BOX}`,
   );
 
   // Progress bar background + fill
