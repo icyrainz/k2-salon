@@ -2,8 +2,8 @@
  * Video generator — creates a YouTube Short from a room's conversation.
  *
  * Walks through all messages in a room, generates TTS for content messages
- * (reusing cached audio), builds a renderer-agnostic timeline manifest,
- * and produces a 1080x1920 vertical video with ffmpeg.
+ * (reusing cached audio), builds a timeline manifest, and produces a
+ * 1080x1920 portrait video (YouTube Shorts format) with ffmpeg.
  *
  * Usage:
  *   just video <room-name>
@@ -24,8 +24,6 @@ import type { AgentColor, VideoManifest, VideoSegment } from "../core/types.js";
 import { isContentId, parseId } from "../core/types.js";
 
 const ROOMS_DIR = "rooms";
-const WIDTH = 1080;
-const HEIGHT = 1920;
 const PAUSE_MS = 800;
 function resolveFontPath(): string {
   const candidates = [
@@ -145,18 +143,14 @@ function concatenateMp3s(
 // ── Escaping for ffmpeg drawtext ────────────────────────────────────
 
 function escapeDrawtext(text: string): string {
-  // ffmpeg drawtext escaping requires two levels:
-  // Level 1 (text value): escape \, ', :
-  // Level 2 (filter graph): escape \, ', ;
-  // We apply both in one pass. Order matters: backslashes first.
+  // ffmpeg drawtext option parsing splits on ':' BEFORE respecting quotes,
+  // so colons must be backslash-escaped even inside text='...'.
+  // Backslashes must be escaped first to avoid double-escaping.
   return text
-    .replace(/\\/g, "\\\\\\\\") // \ → \\\\ (escaped at both levels)
-    .replace(/'/g, "\\\\\\'") // ' → \\' (escaped at both levels)
-    .replace(/:/g, "\\\\:") // : → \\: (text-level escape)
-    .replace(/;/g, "\\;") // ; → \; (filter-level escape)
-    .replace(/%/g, "%%%%") // % → %% (drawtext expansion escape)
-    .replace(/\[/g, "\\[") // [ → \[ (filter-level escape)
-    .replace(/\]/g, "\\]") // ] → \] (filter-level escape)
+    .replace(/\\/g, "\\\\") // \ → \\
+    .replace(/'/g, "\u2019") // ' → ' (curly quote, avoids delimiter break)
+    .replace(/:/g, "\\:") // : → \: (drawtext option separator escape)
+    .replace(/;/g, "\\;") // ; → \; (filter chain separator escape)
     .replace(/\n/g, " ");
 }
 
@@ -189,6 +183,51 @@ function buildSubtitleChunks(
     chunks.push({ lines: chunkLines, wordCount });
   }
   return chunks;
+}
+
+// ── Animation expression helpers for ffmpeg drawtext ────────────────
+
+/** Generate an alpha expression for fade-in/fade-out transitions.
+ *  Returns an ffmpeg expression using `t` (current time in seconds). */
+function fadeExpr(
+  startTime: number,
+  endTime: number,
+  fadeIn: number,
+  fadeOut: number,
+): string {
+  const s = startTime.toFixed(3);
+  const fi = (startTime + fadeIn).toFixed(3);
+  const fo = (endTime - fadeOut).toFixed(3);
+  const e = endTime.toFixed(3);
+  // Expression is single-quoted at the call site, so commas are literal
+  return (
+    `if(lt(t,${s}),0,` +
+    `if(lt(t,${fi}),(t-${s})/${fadeIn.toFixed(3)},` +
+    `if(lt(t,${fo}),1,` +
+    `if(lt(t,${e}),(${e}-t)/${fadeOut.toFixed(3)},` +
+    `0))))`
+  );
+}
+
+/** Generate a y expression for slide-up animation with sine ease-out.
+ *  Text starts `offset` px below `finalY` and slides up over `duration` seconds. */
+function slideUpExpr(
+  startTime: number,
+  duration: number,
+  finalY: number,
+  offset: number,
+): string {
+  const s = startTime.toFixed(3);
+  const d = duration.toFixed(3);
+  const sd = (startTime + duration).toFixed(3);
+  const base = finalY.toFixed(0);
+  const off = offset.toFixed(0);
+  // Expression is single-quoted at the call site, so commas are literal
+  return (
+    `if(lt(t,${s}),${finalY + offset},` +
+    `if(lt(t,${sd}),${base}+${off}*(1-sin(PI/2*(t-${s})/${d})),` +
+    `${base}))`
+  );
 }
 
 // ── Pexels stock video background ──────────────────────────────────
@@ -459,7 +498,7 @@ function buildLoopingBackground(
   totalDuration: number,
   tmpDir: string,
 ): string {
-  // Normalize all clips to same resolution, framerate, and pixel format
+  // Normalize all clips: scale, crop, desaturate, darken, blur
   const normalizedPaths: string[] = [];
   for (let i = 0; i < clips.length; i++) {
     const outPath = join(tmpDir, `bg-norm-${i}.mp4`);
@@ -467,7 +506,7 @@ function buildLoopingBackground(
       "-i",
       clips[i],
       "-vf",
-      `scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30`,
+      `scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=increase,crop=${WIDTH}:${HEIGHT},fps=30,hue=s=0.08:h=210,eq=brightness=-0.5,gblur=sigma=4`,
       "-an",
       "-c:v",
       "libx264",
@@ -611,6 +650,34 @@ async function buildIntroScript(
 
 // ── Main pipeline ───────────────────────────────────────────────────
 
+// ── Layout constants (portrait 9:16 for YouTube Shorts) ────────────
+const WIDTH = 1080;
+const HEIGHT = 1920;
+
+const LAYOUT = {
+  titleY: 40,
+  titleSize: 48,
+  topicY: 108,
+  topicSize: 28,
+  topicWrap: 38,
+  accentLineY: 155,
+  waveY: 620,
+  waveW: 920,
+  waveH: 200,
+  introCardY: 900,
+  introCardSpacing: 100,
+  speakerNameY: 1370,
+  subtitleY: 1430,
+  subtitleSize: 34,
+  subtitleLineH: 50,
+  subtitleWrap: 36,
+  progressY: 1750,
+  progressH: 6,
+  outroThanksY: 768,
+  outroBrandY: 922,
+  outroTopicY: 1056,
+};
+
 async function main() {
   if (!roomName) {
     process.stderr.write(
@@ -750,7 +817,25 @@ async function main() {
     }
   }
 
-  const totalDuration = currentTime;
+  // 6b. Generate outro narration TTS
+  const outroScript =
+    "That's all for today's discussion on K2 Salon. Thanks for watching.";
+  const outroAudioPath = join(ROOMS_DIR, roomName, "tts", "outro.mp3");
+  if (regenTts || !existsSync(outroAudioPath)) {
+    process.stderr.write("Generating outro narration...\n");
+    const outroAudio = await synthesiseTts(outroScript, "onyx");
+    const outroDir = join(ROOMS_DIR, roomName, "tts");
+    if (!existsSync(outroDir)) await mkdir(outroDir, { recursive: true });
+    await writeFile(outroAudioPath, outroAudio);
+  }
+  const outroDuration = ffprobe(outroAudioPath);
+  const OUTRO_BUFFER = 1.5; // silence before outro narration
+  const OUTRO_TAIL = 1.0; // silence after narration to end
+  const outroStart = currentTime + OUTRO_BUFFER;
+  const totalDuration = outroStart + outroDuration + OUTRO_TAIL;
+  process.stderr.write(
+    `Outro: ${(outroDuration + OUTRO_BUFFER + OUTRO_TAIL).toFixed(1)}s\n`,
+  );
 
   // 7. Build manifest
   const manifest: VideoManifest = {
@@ -802,6 +887,15 @@ async function main() {
     }
   }
 
+  // Outro: silence buffer + narration + tail silence
+  const outroBufferSilPath = join(tmpDir, "outro-buffer.mp3");
+  generateSilence(OUTRO_BUFFER * 1000, outroBufferSilPath);
+  chunkPaths.push(outroBufferSilPath);
+  chunkPaths.push(outroAudioPath);
+  const outroTailSilPath = join(tmpDir, "outro-tail.mp3");
+  generateSilence(OUTRO_TAIL * 1000, outroTailSilPath);
+  chunkPaths.push(outroTailSilPath);
+
   const audioPath = join(videoDir, "audio.mp3");
   concatenateMp3s(chunkPaths, audioPath, tmpDir);
   process.stderr.write(`Audio concatenated → ${audioPath}\n`);
@@ -822,30 +916,36 @@ async function main() {
   // Build drawtext filters for each content segment
   const drawtextFilters: string[] = [];
 
-  const SUBTITLE_FONT_SIZE = 30;
-  const SUBTITLE_LINE_HEIGHT = 46; // px per line with box padding
-  const SUBTITLE_Y_START = 1450; // bottom third, above progress bar
+  const SUBTITLE_FONT_SIZE = LAYOUT.subtitleSize;
+  const SUBTITLE_LINE_HEIGHT = LAYOUT.subtitleLineH;
+  const SUBTITLE_Y_START = LAYOUT.subtitleY;
   const FONT = FONT_PATH ? `:fontfile='${FONT_PATH}'` : "";
-  const SUBTITLE_BOX = `:box=1:boxcolor=black@0.55:boxborderw=14`;
-  const HEADER_BOX = `:box=1:boxcolor=black@0.6:boxborderw=10`;
+  const SHADOW = `:shadowcolor=black@0.7:shadowx=2:shadowy=2`;
+  const SUBTITLE_BOX = `:box=1:boxcolor=black@0.3:boxborderw=14${SHADOW}`;
+  const HEADER_BOX = `:box=1:boxcolor=black@0.6:boxborderw=10${SHADOW}`;
 
   // Static title — always visible
   drawtextFilters.push(
-    `drawtext=${FONT}:text='K2 Salon':fontsize=48:fontcolor=white:x=(w-text_w)/2:y=40${HEADER_BOX}`,
+    `drawtext=${FONT}:text='K2 Salon':fontsize=${LAYOUT.titleSize}:fontcolor=white:x=(w-text_w)/2:y=${LAYOUT.titleY}${HEADER_BOX}`,
   );
 
   // Topic — word-wrapped across multiple lines, always visible
-  const topicLines = wordWrap(meta.topic, 38);
+  const topicLines = wordWrap(meta.topic, LAYOUT.topicWrap);
   for (let i = 0; i < topicLines.length; i++) {
     drawtextFilters.push(
-      `drawtext=${FONT}:text='${escapeDrawtext(topicLines[i])}':fontsize=28:fontcolor=0xd1d5db:x=(w-text_w)/2:y=${108 + i * 36}${HEADER_BOX}`,
+      `drawtext=${FONT}:text='${escapeDrawtext(topicLines[i])}':fontsize=${LAYOUT.topicSize}:fontcolor=0xd1d5db:x=(w-text_w)/2:y=${LAYOUT.topicY + i * (LAYOUT.topicSize + 8)}${HEADER_BOX}`,
     );
   }
 
+  // Accent line under topic for visual structure
+  drawtextFilters.push(
+    `drawbox=x=${Math.round(WIDTH * 0.3)}:y=${LAYOUT.accentLineY}:w=${Math.round(WIDTH * 0.4)}:h=2:color=0x06b6d4@0.5:t=fill`,
+  );
+
   // ── Intro sequence: staggered participant cards ──
   // Spread participant appearances evenly across the narration duration
-  const introCardY = 900;
-  const introCardSpacing = 100;
+  const introCardY = LAYOUT.introCardY;
+  const introCardSpacing = LAYOUT.introCardSpacing;
   const narrationDuration = INTRO_DURATION - 1; // exclude the 1s buffer
   const speakerInterval = narrationDuration / (participants.length + 1);
 
@@ -854,42 +954,66 @@ async function main() {
     const hexColor = p.color.replace("#", "0x");
     const cardY = introCardY + pi * introCardSpacing;
     const appearAt = speakerInterval * (pi + 1);
-    const introEnable = `enable='between(t,${appearAt.toFixed(3)},${INTRO_DURATION.toFixed(3)})'`;
+    const disappearAt = INTRO_DURATION;
+    const introFadeIn = 0.4;
+    const introFadeOut = 0.5;
 
-    // Colored name with background
+    const nameAlpha = fadeExpr(
+      appearAt,
+      disappearAt,
+      introFadeIn,
+      introFadeOut,
+    );
+    const nameY = slideUpExpr(appearAt, introFadeIn, cardY, 20);
+
+    // Colored name with fade-in + slide-up
     drawtextFilters.push(
-      `drawtext=${FONT}:text='${escapeDrawtext(p.name)}':fontsize=36:fontcolor=${hexColor}:x=(w-text_w)/2:y=${cardY}${SUBTITLE_BOX}:${introEnable}`,
+      `drawtext=${FONT}:text='${escapeDrawtext(p.name)}':fontsize=36:fontcolor=${hexColor}:x=(w-text_w)/2:y='${nameY}':alpha='${nameAlpha}'${SUBTITLE_BOX}`,
     );
 
-    // Tagline underneath with background
+    // Tagline underneath with same animation
     if (p.tagline) {
+      const tagY = slideUpExpr(appearAt, introFadeIn, cardY + 48, 20);
       drawtextFilters.push(
-        `drawtext=${FONT}:text='${escapeDrawtext(p.tagline)}':fontsize=22:fontcolor=0xd1d5db:x=(w-text_w)/2:y=${cardY + 48}${HEADER_BOX}:${introEnable}`,
+        `drawtext=${FONT}:text='${escapeDrawtext(p.tagline)}':fontsize=22:fontcolor=0xd1d5db:x=(w-text_w)/2:y='${tagY}':alpha='${nameAlpha}'${HEADER_BOX}`,
       );
     }
   }
 
   // Per-segment speaker name + rolling subtitles (one drawtext per line)
-  const maxSubtitleChars = 38;
+  const maxSubtitleChars = LAYOUT.subtitleWrap;
   const linesPerChunk = 3;
   for (const seg of contentSegs) {
     const color = colorMap.get(seg.agent) ?? "#ffffff";
     const hexColor = color.replace("#", "0x");
     const name = escapeDrawtext(seg.agent);
 
-    const fadeIn = Math.max(0, seg.startTime - 0.15);
-    const fadeOut = seg.endTime + 0.15;
+    const speakerFadeIn = 0.3;
+    const speakerFadeOut = 0.3;
+    const speakerStart = Math.max(0, seg.startTime - 0.15);
+    const speakerEnd = seg.endTime + seg.pauseAfter;
+    const speakerY = LAYOUT.speakerNameY;
 
-    // Speaker name — visible for entire segment, just above subtitle zone
+    const speakerAlpha = fadeExpr(
+      speakerStart,
+      speakerEnd,
+      speakerFadeIn,
+      speakerFadeOut,
+    );
+    const speakerYExpr = slideUpExpr(speakerStart, speakerFadeIn, speakerY, 15);
+
+    // Speaker name — fade + slide-up, crossfades with adjacent segments
     drawtextFilters.push(
-      `drawtext=${FONT}:text='● ${name}':fontsize=36:fontcolor=${hexColor}:x=(w-text_w)/2:y=${SUBTITLE_Y_START - 60}${SUBTITLE_BOX}:` +
-        `enable='between(t,${fadeIn.toFixed(3)},${fadeOut.toFixed(3)})'`,
+      `drawtext=${FONT}:text='● ${name}':fontsize=36:fontcolor=${hexColor}:x=(w-text_w)/2:y='${speakerYExpr}':alpha='${speakerAlpha}'${SUBTITLE_BOX}`,
     );
 
     // Split text into timed subtitle chunks proportional to word count
     const allLines = wordWrap(seg.text, maxSubtitleChars);
     const chunks = buildSubtitleChunks(allLines, linesPerChunk);
     const totalWords = chunks.reduce((s, c) => s + c.wordCount, 0);
+
+    const subFadeIn = 0.2;
+    const subFadeOut = 0.2;
 
     let chunkStart = seg.startTime;
     for (const chunk of chunks) {
@@ -898,13 +1022,13 @@ async function main() {
           ? (chunk.wordCount / totalWords) * seg.duration
           : seg.duration / chunks.length;
       const chunkEnd = chunkStart + chunkDuration;
-      const enable = `enable='between(t,${chunkStart.toFixed(3)},${chunkEnd.toFixed(3)})'`;
+      const chunkAlpha = fadeExpr(chunkStart, chunkEnd, subFadeIn, subFadeOut);
 
-      // Render each line as its own drawtext with subtitle box
+      // Render each line with fade transition
       for (let li = 0; li < chunk.lines.length; li++) {
         const y = SUBTITLE_Y_START + li * SUBTITLE_LINE_HEIGHT;
         drawtextFilters.push(
-          `drawtext=${FONT}:text='${escapeDrawtext(chunk.lines[li])}':fontsize=${SUBTITLE_FONT_SIZE}:fontcolor=white:x=(w-text_w)/2:y=${y}${SUBTITLE_BOX}:${enable}`,
+          `drawtext=${FONT}:text='${escapeDrawtext(chunk.lines[li])}':fontsize=${SUBTITLE_FONT_SIZE}:fontcolor=${hexColor}@0.95:x=(w-text_w)/2:y=${y}:alpha='${chunkAlpha}'${SUBTITLE_BOX}`,
         );
       }
 
@@ -912,12 +1036,34 @@ async function main() {
     }
   }
 
+  // ── Outro end card ──
+  const outroFadeIn = 0.5;
+  const outroFadeOut = 0.3;
+  const outroAlpha = fadeExpr(
+    outroStart - 0.5,
+    totalDuration,
+    outroFadeIn,
+    outroFadeOut,
+  );
+  // "Thanks for watching" text
+  drawtextFilters.push(
+    `drawtext=${FONT}:text='Thanks for watching':fontsize=40:fontcolor=white:x=(w-text_w)/2:y=${LAYOUT.outroThanksY}:alpha='${outroAlpha}'${HEADER_BOX}`,
+  );
+  // K2 Salon branding
+  drawtextFilters.push(
+    `drawtext=${FONT}:text='K2 Salon':fontsize=56:fontcolor=0x06b6d4:x=(w-text_w)/2:y=${LAYOUT.outroBrandY}:alpha='${outroAlpha}'${HEADER_BOX}`,
+  );
+  // Topic reminder
+  drawtextFilters.push(
+    `drawtext=${FONT}:text='${escapeDrawtext(meta.topic)}':fontsize=24:fontcolor=0xd1d5db:x=(w-text_w)/2:y=${LAYOUT.outroTopicY}:alpha='${outroAlpha}'${HEADER_BOX}`,
+  );
+
   // Progress bar background + fill
   drawtextFilters.unshift(
-    `drawbox=x=80:y=1750:w=${WIDTH - 160}:h=4:color=0x333333:t=fill`,
+    `drawbox=x=80:y=${LAYOUT.progressY}:w=${WIDTH - 160}:h=${LAYOUT.progressH}:color=0x333333@0.6:t=fill`,
   );
   drawtextFilters.push(
-    `drawbox=x=80:y=1750:w='(${WIDTH - 160})*t/${totalDuration.toFixed(3)}':h=4:color=0x06b6d4:t=fill`,
+    `drawbox=x=80:y=${LAYOUT.progressY}:w='(${WIDTH - 160})*t/${totalDuration.toFixed(3)}':h=${LAYOUT.progressH}:color=0x06b6d4:t=fill`,
   );
 
   // Build filter graph — with video background or solid color fallback
@@ -929,19 +1075,37 @@ async function main() {
   const audioIdx = useVideoBg ? 1 : 0;
 
   const bgFilter = useVideoBg
-    ? // Darken the video background for text readability
-      `[0:v]scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=increase,crop=${WIDTH}:${HEIGHT},` +
-      `colorbalance=bs=-0.3:bm=-0.3:bh=-0.3,eq=brightness=-0.4:saturation=0.6[bg]`
+    ? // Background already graded (grayscale, dark, blurred) in buildLoopingBackground
+      `[0:v]scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=increase,crop=${WIDTH}:${HEIGHT}[bg]`
     : `color=c=0x1a1a2e:s=${WIDTH}x${HEIGHT}:d=${totalDuration.toFixed(3)}[bg]`;
+
+  // Gradient overlays — top vignette + bottom fade to black
+  const topGradH = Math.round(HEIGHT * 0.15);
+  const botGradH = Math.round(HEIGHT * 0.65);
+  const botGradY = HEIGHT - botGradH;
 
   const filterGraph = [
     bgFilter,
-    `[${audioIdx}:a]showfreqs=s=16x350:mode=bar:fscale=log:ascale=log:colors=white|white|white|white:win_size=2048[eq_raw]`,
-    `[eq_raw]tmix=frames=4:weights=1 3 3 1[eq_smooth]`,
-    `[eq_smooth]scale=920:350:flags=neighbor[eq]`,
-    `[bg][eq]overlay=(W-w)/2:500[v]`,
+    // Normalize audio levels, split for waveform visualization + output
+    `[${audioIdx}:a]loudnorm=I=-16:TP=-1.5:LRA=11[anorm]`,
+    `[anorm]asplit=2[awav][aout]`,
+    // Waveform: colorkey removes black bg so it floats on the background
+    `[awav]compand,showwaves=s=${LAYOUT.waveW}x${LAYOUT.waveH}:mode=cline:scale=sqrt:colors=0x06b6d4@0.7:draw=full,format=rgba,colorkey=color=black:similarity=0.12:blend=0.2[wave]`,
+    `[bg][wave]overlay=(W-w)/2:${LAYOUT.waveY}[vw]`,
+    // Top vignette gradient (dark edges at top for cinematic framing)
+    `color=c=black:s=${WIDTH}x${topGradH}[topgrad_solid]`,
+    `[topgrad_solid]format=rgba,geq='r=0:g=0:b=0:a=255*pow((${topGradH}-Y)/${topGradH},0.5)'[topgrad]`,
+    `[vw][topgrad]overlay=0:0[vt]`,
+    // Bottom gradient overlay for subtitle zone readability
+    `color=c=black:s=${WIDTH}x${botGradH}[grad_solid]`,
+    `[grad_solid]format=rgba,geq='r=0:g=0:b=0:a=255*pow(Y/${botGradH},0.35)'[grad]`,
+    `[vt][grad]overlay=0:${botGradY}[v]`,
     `[v]${drawtextFilters.join(",")}[out]`,
   ].join(";");
+
+  // Write filter graph to a file — avoids CLI arg escaping issues
+  const filterScriptPath = join(videoDir, "filtergraph.txt");
+  await writeFile(filterScriptPath, filterGraph);
 
   // 12. Render video
   const outPath = outputFile ?? join(videoDir, "shorts.mp4");
@@ -953,26 +1117,34 @@ async function main() {
 
   ffmpeg([
     ...ffmpegInputs,
-    "-filter_complex",
-    filterGraph,
+    "-filter_complex_script",
+    filterScriptPath,
     "-map",
     "[out]",
     "-map",
-    `${audioIdx}:a`,
+    "[aout]",
     "-c:v",
     "libx264",
     "-preset",
-    "medium",
+    "slow",
     "-crf",
-    "23",
+    "18",
+    "-profile:v",
+    "high",
+    "-level:v",
+    "4.2",
     "-c:a",
     "aac",
     "-b:a",
-    "128k",
+    "192k",
+    "-ar",
+    "48000",
     "-r",
     "30",
     "-pix_fmt",
     "yuv420p",
+    "-movflags",
+    "+faststart",
     "-shortest",
     outPath,
   ]);
