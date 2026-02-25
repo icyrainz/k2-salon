@@ -921,7 +921,7 @@ async function main() {
   const SUBTITLE_Y_START = LAYOUT.subtitleY;
   const FONT = FONT_PATH ? `:fontfile='${FONT_PATH}'` : "";
   const SHADOW = `:shadowcolor=black@0.7:shadowx=2:shadowy=2`;
-  const SUBTITLE_BOX = `:box=1:boxcolor=black@0.3:boxborderw=14${SHADOW}`;
+  const SUBTITLE_BOX = `:box=1:boxcolor=black@0.35:boxborderw=16${SHADOW}`;
   const HEADER_BOX = `:box=1:boxcolor=black@0.6:boxborderw=10${SHADOW}`;
 
   // Static title — always visible
@@ -1001,6 +1001,20 @@ async function main() {
       speakerFadeOut,
     );
     const speakerYExpr = slideUpExpr(speakerStart, speakerFadeIn, speakerY, 15);
+
+    // Decorative quote mark in center zone — visual hint this is conversation
+    const quoteY =
+      Math.round((LAYOUT.waveY + LAYOUT.waveH + LAYOUT.speakerNameY) / 2) - 40;
+    drawtextFilters.push(
+      `drawtext=${FONT}:text='\u201C':fontsize=120:fontcolor=${hexColor}@0.12:x=(w-text_w)/2:y=${quoteY}:alpha='${speakerAlpha}'`,
+    );
+
+    // Speaker color accent bar above name
+    const barW = 60;
+    const barY = speakerY - 20;
+    drawtextFilters.push(
+      `drawbox=x=${Math.round((WIDTH - barW) / 2)}:y='${slideUpExpr(speakerStart, speakerFadeIn, barY, 15)}':w=${barW}:h=3:color=${hexColor}@0.8:t=fill:enable='between(t,${speakerStart.toFixed(3)},${speakerEnd.toFixed(3)})'`,
+    );
 
     // Speaker name — fade + slide-up, crossfades with adjacent segments
     drawtextFilters.push(
